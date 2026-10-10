@@ -1,0 +1,23 @@
+# Supabase project settings used when deploying.
+# Every function checks who is calling in its own code (a signed-in household
+# member, the cron secret, or the inbound-email secret), so the gateway's JWT
+# check is turned off. This keeps working with both old and new Supabase API keys.
+project_id = "household-manager"
+
+[functions.agent]
+verify_jwt = false
+
+[functions.intake]
+verify_jwt = false
+
+[functions.inbound-email]
+verify_jwt = false
+
+[functions.poll]
+verify_jwt = false
+
+[functions.calendar-sync]
+verify_jwt = false
+
+[functions.notify]
+verify_jwt = false

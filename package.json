@@ -1,0 +1,8 @@
+{
+  "name": "household-manager",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "sh scripts/test.sh"
+  }
+}
