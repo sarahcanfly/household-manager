@@ -39,17 +39,17 @@ test('calendar sync: create, no-op, update, recreate, delete, restore hand-delet
     ev({ id: 'e1', title: 'Soccer Practice', date: plus(3), time: '17:30', for_ids: ['k2'], driver: 's1' }),
     ev({ id: 'e2', title: 'Ortho', date: plus(4), time: '13:30', for_ids: ['k1'] }),
     ev({ id: 'e3', title: 'No School', date: plus(5), for_ids: ['k1', 'k2', 'k3'], driver: 'none' }),
-    ev({ id: 'e4', title: 'Reid dentist', date: plus(6), time: '08:30', for_ids: ['k3'], driver: 'x1' }),
+    ev({ id: 'e4', title: 'Ivy dentist', date: plus(6), time: '08:30', for_ids: ['k3'], driver: 'x1' }),
     ev({ id: 'old', title: 'Long ago', date: plus(-100), time: '09:00' }),
   ] };
   const g = fakeCalendar(), map = new Map();
   let { r } = await sync(world, g, map);
   assert.equal(r.created, 4, 'old event outside the window is skipped');
   const titles = [...g.events.values()].map((b) => b.summary);
-  assert.ok(titles.includes('Soccer Practice (Ozzie)'));
-  assert.ok(titles.includes('⚠ Ortho (Aaron)'), 'missing driver flagged');
+  assert.ok(titles.includes('Soccer Practice (Leo)'));
+  assert.ok(titles.includes('⚠ Ortho (Mia)'), 'missing driver flagged');
   assert.ok(titles.includes('No School (kids)'), 'all the kids: short suffix');
-  assert.ok(titles.includes('Reid dentist'), 'name already in title: no suffix');
+  assert.ok(titles.includes('Ivy dentist'), 'name already in title: no suffix');
   const allDay = [...g.events.values()].find((b) => b.summary === 'No School (kids)');
   assert.deepEqual([allDay.start.date, allDay.end.date], [plus(5), domain.addDays(plus(5), 1)]);
   const timed = [...g.events.values()].find((b) => b.summary.startsWith('Soccer'));
@@ -63,7 +63,7 @@ test('calendar sync: create, no-op, update, recreate, delete, restore hand-delet
   world.events[1].driver = 'm1';
   ({ r } = await sync(world, g, map));
   assert.equal(r.updated, 1);
-  assert.ok([...g.events.values()].some((b) => b.summary === 'Ortho (Aaron)'), 'warning cleared');
+  assert.ok([...g.events.values()].some((b) => b.summary === 'Ortho (Mia)'), 'warning cleared');
 
   world.events[3].time = '';
   ({ r } = await sync(world, g, map));
@@ -122,7 +122,7 @@ test('weekly summary goes out once at the right local hour, with texts', async (
   const now = new Date('2026-10-12T11:10:00Z');
   const store = new MemoryStore({
     events: [ev({ title: 'Soccer', date: '2026-10-13', time: '17:30', for_ids: ['k2'], driver: 's1' }), ev({ title: 'Ortho', date: '2026-10-14', time: '13:30', for_ids: ['k1'] })],
-    settings: { notify: ['sarah@x.com', 'mikey@hotmail.com'], sms: { enabled: true, weekly: true, reminders: true, digest: false, max_chars: 600, recipients: [{ name: 'Sarah', number: '(347) 555-0101', carrier: 'vzwpix.com' }] } },
+    settings: { notify: ['alex@x.com', 'jordan@hotmail.com'], sms: { enabled: true, weekly: true, reminders: true, digest: false, max_chars: 600, recipients: [{ name: 'Alex', number: '(347) 555-0101', carrier: 'vzwpix.com' }] } },
   });
   store.pending.push({ id: 'p1', title: 'Bake sale', date: '2026-10-20', time: '', for_ids: [], place: '', note: '', source: 'email', source_ref: '', confidence: 'high' });
   const n = notifier(store, now);
@@ -137,7 +137,7 @@ test('weekly summary goes out once at the right local hour, with texts', async (
 
 test('evening reminder is quiet when tomorrow is empty; digest only when items wait', async () => {
   const now = new Date('2026-10-14T22:05:00Z');   // 6:05pm New York, Wednesday
-  const store = new MemoryStore({ settings: { notify: ['sarah@x.com'] } });
+  const store = new MemoryStore({ settings: { notify: ['alex@x.com'] } });
   const n = notifier(store, now);
   assert.deepEqual(await n.run(), [], 'nothing tomorrow: no email');
   store.events.push(ev({ title: 'Field trip', date: '2026-10-15', time: '08:00', for_ids: ['k1'], driver: 'none' }));
@@ -158,7 +158,7 @@ test('texts are trimmed with a count of what was cut', () => {
 /* ---------- intake ---------- */
 
 test('pasted calendar file is parsed exactly, no Claude call', async () => {
-  const store = new MemoryStore({ settings: { ics_rules: { tag: [{ match: 'Soccer', who: ['Ozzie'] }] } } });
+  const store = new MemoryStore({ settings: { ics_rules: { tag: [{ match: 'Soccer', who: ['Leo'] }] } } });
   const claude = fakeClaude([]);
   const d1 = plus(3).replace(/-/g, '');
   const text = `BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Soccer game\nDTSTART;TZID=America/New_York:${d1}T090000\nEND:VEVENT\nEND:VCALENDAR`;
@@ -195,14 +195,14 @@ test('photos and PDFs become image and document blocks; other types refused', as
 test('scheduled poll reads feeds and docs and reports errors per source', async () => {
   const d1 = plus(4).replace(/-/g, '');
   const store = new MemoryStore({ settings: {
-    feeds: [{ name: 'School', url: 'https://feed/x.ics', exclude: ['Dunning'] }, { name: 'Broken', url: 'https://feed/bad' }],
+    feeds: [{ name: 'School', url: 'https://feed/x.ics', exclude: ['Pine Hill'] }, { name: 'Broken', url: 'https://feed/bad' }],
     docs: [{ id: 'doc1', name: 'Upcoming Events' }],
   } });
-  const claude = fakeClaude([say(JSON.stringify([{ title: 'Reid baseball', date: plus(6), time: '17:30', for: ['k3'] }]))]);
+  const claude = fakeClaude([say(JSON.stringify([{ title: 'Ivy baseball', date: plus(6), time: '17:30', for: ['k3'] }]))]);
   const report = await intake.pollSources({
     store, claude,
-    fetchText: async (u) => (u.endsWith('.ics') ? `BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Dunning Open House\nDTSTART;VALUE=DATE:${d1}\nEND:VEVENT\nBEGIN:VEVENT\nSUMMARY:Walsh Open House\nDTSTART;VALUE=DATE:${d1}\nEND:VEVENT\nEND:VCALENDAR` : 'nope'),
-    driveText: async () => 'October\nTue 13 Reid baseball 5:30',
+    fetchText: async (u) => (u.endsWith('.ics') ? `BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Pine Hill Open House\nDTSTART;VALUE=DATE:${d1}\nEND:VEVENT\nBEGIN:VEVENT\nSUMMARY:Oakwood Open House\nDTSTART;VALUE=DATE:${d1}\nEND:VEVENT\nEND:VCALENDAR` : 'nope'),
+    driveText: async () => 'October\nTue 13 Ivy baseball 5:30',
     driveBase64: async () => '',
   }, 'scheduled');
   assert.match(report[0], /School: found 1, queued 1/);

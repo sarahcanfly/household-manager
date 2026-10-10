@@ -10,12 +10,12 @@ export const plus = (n, from = new Date()) => {
 
 export function members() {
   return [
-    { id: 's1', name: 'Sarah', kind: 'adult', color: '#3F6B54', active: true, sort: 0 },
-    { id: 'm1', name: 'Mikey', kind: 'adult', color: '#8E4767', active: true, sort: 1 },
-    { id: 'k1', name: 'Aaron', kind: 'kid', color: '#3B5A8A', active: true, sort: 2 },
-    { id: 'k2', name: 'Ozzie', kind: 'kid', color: '#A8752A', active: true, sort: 3 },
-    { id: 'k3', name: 'Reid', kind: 'kid', color: '#2E6E75', active: true, sort: 4 },
-    { id: 'x1', name: 'Jenn', kind: 'other', color: '#9A4B2E', active: true, sort: 5 },
+    { id: 's1', name: 'Alex', kind: 'adult', color: '#3F6B54', active: true, sort: 0 },
+    { id: 'm1', name: 'Jordan', kind: 'adult', color: '#8E4767', active: true, sort: 1 },
+    { id: 'k1', name: 'Mia', kind: 'kid', color: '#3B5A8A', active: true, sort: 2 },
+    { id: 'k2', name: 'Leo', kind: 'kid', color: '#A8752A', active: true, sort: 3 },
+    { id: 'k3', name: 'Ivy', kind: 'kid', color: '#2E6E75', active: true, sort: 4 },
+    { id: 'x1', name: 'Rose', kind: 'other', color: '#9A4B2E', active: true, sort: 5 },
     { id: 'old', name: 'Oldie', kind: 'kid', color: '#000', active: false, sort: 6 },
   ];
 }

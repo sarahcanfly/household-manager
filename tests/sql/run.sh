@@ -21,3 +21,11 @@ for f in "$root"/supabase/migrations/*.sql; do psql_ "-d t -f $dir/$(basename "$
 out="$(psql_ "-d t -f $dir/tests.sql" 2>&1 || true)"
 echo "$out" | grep -E 'ok -|FAIL|ERROR|PASSED' | sed 's/^psql:[^ ]* NOTICE:  //'
 echo "$out" | grep -q 'ALL SQL TESTS PASSED'
+# Optional: extra SQL files to load afterwards into a fresh database (e.g. an import), then show counts.
+if [ "$#" -gt 0 ]; then
+  psql_ "-c 'create database extra'"
+  psql_ "-d extra -f $dir/supabase_stub.sql"
+  for f in "$root"/supabase/migrations/*.sql; do psql_ "-d extra -f $dir/$(basename "$f")"; done
+  for f in "$@"; do cp "$f" "$dir/extra.sql"; chmod 644 "$dir/extra.sql"; psql_ "-d extra -f $dir/extra.sql"; done
+  psql_ "-d extra -At -c \"select 'members', count(*) from members union all select 'events', count(*) from events union all select 'pending', count(*) from pending union all select 'allowed', count(*) from allowed_users union all select 'feeds', jsonb_array_length(value) from settings where key='feeds'\""
+fi

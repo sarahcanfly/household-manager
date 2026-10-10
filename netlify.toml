@@ -1,0 +1,22 @@
+# The phone app is plain files in web/: nothing to build.
+[build]
+  publish = "web"
+  command = "true"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "same-origin"
+    Permissions-Policy = "camera=(self), microphone=(self), geolocation=()"
+
+# Always fetch these fresh so updates reach phones right away.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/config.js"
+  [headers.values]
+    Cache-Control = "no-cache"

@@ -11,9 +11,9 @@ begin
 end $$;
 
 -- Seed as the owner (bypasses rules)
-insert into public.allowed_users values ('sarah@x.com'), ('mikey@x.com');
+insert into public.allowed_users values ('alex@x.com'), ('jordan@x.com');
 insert into public.members (id, name, kind, sort) values
-  ('s1','Sarah','adult',0), ('m1','Mikey','adult',1), ('k1','Aaron','kid',2), ('k2','Ozzie','kid',3);
+  ('s1','Alex','adult',0), ('m1','Jordan','adult',1), ('k1','Mia','kid',2), ('k2','Leo','kid',3);
 
 -- 1. A stranger who is signed in sees nothing and cannot write
 select pg_temp.as_user('stranger@x.com');
@@ -39,10 +39,10 @@ select pg_temp.check((select count(*) from public.settings) = 0, 'anonymous sees
 reset role;
 
 -- 3. A household member can read and write, case-insensitively matched
-select pg_temp.as_user('Sarah@X.com');
+select pg_temp.as_user('Alex@X.com');
 select pg_temp.check(public.am_i_household(), 'email match ignores case');
 insert into public.events (id, title, date, time, for_ids, driver) values ('e1', 'Ortho', current_date + 3, '13:30', '{k1}', null);
-select pg_temp.check((select created_by from public.events where id = 'e1') = 'Sarah@X.com', 'created_by filled in');
+select pg_temp.check((select created_by from public.events where id = 'e1') = 'Alex@X.com', 'created_by filled in');
 select pg_temp.check((select count(*) from public.members) = 4, 'member sees members');
 select pg_temp.check((select count(*) from public.settings) > 5, 'member sees settings');
 -- cannot see server bookkeeping
@@ -65,7 +65,7 @@ end $$;
 -- log: can add own lines, cannot forge someone else's
 insert into public.log (action, detail) values ('test', 'mine');
 do $$ begin
-  insert into public.log (actor, action) values ('mikey@x.com', 'forged');
+  insert into public.log (actor, action) values ('jordan@x.com', 'forged');
   raise exception 'FAIL: forged log actor accepted';
 exception when insufficient_privilege then raise notice 'ok - log actor cannot be forged';
 end $$;
@@ -98,7 +98,7 @@ select pg_temp.check((public.redeem_agent_token('00000000-0000-0000-0000-0000000
 reset role;
 
 -- 5. Approve with edits, shelve, bulk with a failure
-select pg_temp.as_user('mikey@x.com');
+select pg_temp.as_user('jordan@x.com');
 select pg_temp.check(
   (select public.approve_pending(jsonb_build_object('id', id, 'title', 'Soccer practice', 'time', '17:45', 'driver', 'm1', 'for_ids', '["k2"]'))
    from public.pending where title = 'Soccer') is not null, 'approve returns new id');
@@ -117,15 +117,15 @@ select public.restore_event(jsonb_build_object('id','e1','title','Ortho','date',
 select pg_temp.check(exists (select 1 from public.events where id = 'e1' and time = '13:30') and not exists (select 1 from public.ideas where id = 'i1'), 'undo restores event');
 select public.idea_to_event((select id from public.ideas limit 1), 'e9', current_date + 9, '') where exists (select 1 from public.ideas);
 -- roster: ids kept, removed people kept but inactive, colours by position
-select public.save_members('[{"id":"s1","name":"Sarah","kind":"adult"},{"id":"m1","name":"Mike","kind":"adult"},{"name":"Reid","kind":"kid"}]');
+select public.save_members('[{"id":"s1","name":"Alex","kind":"adult"},{"id":"m1","name":"Mike","kind":"adult"},{"name":"Ivy","kind":"kid"}]');
 select pg_temp.check((select name from public.members where id = 'm1') = 'Mike', 'rename keeps id');
 select pg_temp.check((select active from public.members where id = 'k1') = false, 'removed member kept, inactive');
-select pg_temp.check((select count(*) from public.members where name = 'Reid' and active and color = '#3B5A8A') = 1, 'new member gets palette colour by position');
+select pg_temp.check((select count(*) from public.members where name = 'Ivy' and active and color = '#3B5A8A') = 1, 'new member gets palette colour by position');
 reset role;
 
 -- 6. Removing someone from allowed_users locks them out immediately
-delete from public.allowed_users where email = 'mikey@x.com';
-select pg_temp.as_user('mikey@x.com');
+delete from public.allowed_users where email = 'jordan@x.com';
+select pg_temp.as_user('jordan@x.com');
 select pg_temp.check((select count(*) from public.events) = 0, 'revoked user sees nothing');
 reset role;
 

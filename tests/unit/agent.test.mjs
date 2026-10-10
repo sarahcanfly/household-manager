@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { MemoryStore, fakeClaude, say, use, useMany, lastToolResults, ev, plus } from './helpers.mjs';
 const { Agent, cleanHistory, TOOLS } = await import('../../.build/supabase/functions/_shared/agent.js');
 
-function setup(storeOpts = {}, actor = 'sarah@x.com') {
+function setup(storeOpts = {}, actor = 'alex@x.com') {
   const store = new MemoryStore(storeOpts);
   const notices = [];
   const make = (script) => {
@@ -17,11 +17,11 @@ function setup(storeOpts = {}, actor = 'sarah@x.com') {
 test('adds an event straight away, flags the missing driver and tells the others', async () => {
   const { store, notices, make } = setup();
   const date = plus(53);
-  const { agent, claude } = make([use('add_event', { title: 'Dentist', date, time: '14:00', for: ['Ozzie'], where: 'Natick Dental' }), say('Added. Who is taking Ozzie?')]);
-  const r = await agent.ask('add a dentist appointment for Ozzie at 2pm', []);
+  const { agent, claude } = make([use('add_event', { title: 'Dentist', date, time: '14:00', for: ['Leo'], where: 'Main St Dental' }), say('Added. Who is taking Leo?')]);
+  const r = await agent.ask('add a dentist appointment for Leo at 2pm', []);
   assert.equal(r.changed, true); assert.equal(r.pending, null); assert.match(r.reply, /Who is taking/);
   const row = store.events.find((e) => e.title === 'Dentist');
-  assert.deepEqual([row.date, row.time, row.for_ids, row.place, row.source], [date, '14:00', ['k2'], 'Natick Dental', 'agent']);
+  assert.deepEqual([row.date, row.time, row.for_ids, row.place, row.source], [date, '14:00', ['k2'], 'Main St Dental', 'agent']);
   const result = JSON.parse(lastToolResults(claude)[0].content);
   assert.equal(result.driver_missing, true);
   assert.equal(notices.length, 1); assert.match(notices[0].lines.join('\n'), /No driver assigned/);
@@ -49,22 +49,22 @@ test('refuses duplicates and invalid requests without writing', async () => {
 test('reports conflicts on add', async () => {
   const date = plus(4);
   const { make } = setup({ events: [ev({ id: 'e1', title: 'Soccer', date, time: '17:30', for_ids: ['k2'], driver: 's1' })] });
-  const { agent, claude } = make([use('add_event', { title: 'Baseball', date, time: '17:30', for: ['Reid'], driver: 'Sarah' }), say('Added, but Sarah is double booked.')]);
+  const { agent, claude } = make([use('add_event', { title: 'Baseball', date, time: '17:30', for: ['Ivy'], driver: 'Alex' }), say('Added, but Alex is double booked.')]);
   await agent.ask('baseball', []);
   const result = JSON.parse(lastToolResults(claude)[0].content);
-  assert.equal(result.conflicts.length, 1); assert.match(result.conflicts[0], /Sarah is driving both/);
+  assert.equal(result.conflicts.length, 1); assert.match(result.conflicts[0], /Alex is driving both/);
 });
 
 test('filling a blank driver is immediate; changing one is staged until confirmed', async () => {
   const { store, make } = setup({ events: [ev({ id: 'e4', title: 'Ortho', date: plus(4), time: '13:30', for_ids: ['k1'] }), ev({ id: 'e1', title: 'Soccer', date: plus(4), time: '17:30', for_ids: ['k2'], driver: 's1' })] });
-  let { agent } = make([use('update_event', { id: 'e4', driver: 'Mikey' }), say('Mikey is driving.')]);
-  let r = await agent.ask('Mikey takes Aaron', []);
+  let { agent } = make([use('update_event', { id: 'e4', driver: 'Jordan' }), say('Jordan is driving.')]);
+  let r = await agent.ask('Jordan takes Mia', []);
   assert.equal(r.changed, true); assert.equal(store.events.find((e) => e.id === 'e4').driver, 'm1');
 
-  ({ agent } = make([use('update_event', { id: 'e1', driver: 'Mikey', time: '17:45' }), say('Tap confirm.')]));
-  r = await agent.ask('Mikey takes soccer at 5:45', []);
+  ({ agent } = make([use('update_event', { id: 'e1', driver: 'Jordan', time: '17:45' }), say('Tap confirm.')]));
+  r = await agent.ask('Jordan takes soccer at 5:45', []);
   assert.equal(r.changed, false);
-  assert.match(r.pending.summary, /driver: Sarah -> Mikey/); assert.match(r.pending.summary, /time: 5:30pm -> 5:45pm/);
+  assert.match(r.pending.summary, /driver: Alex -> Jordan/); assert.match(r.pending.summary, /time: 5:30pm -> 5:45pm/);
   assert.equal(store.events.find((e) => e.id === 'e1').driver, 's1', 'nothing changed yet');
   const c = await agent.confirm(r.pending.token);
   assert.equal(c.changed, true);
@@ -110,15 +110,15 @@ test('reads: search by person and newest first, counts by driver, shelf', async 
     events: [ev({ id: 'd1', title: 'Dentist', date: plus(-40), for_ids: ['k3'], driver: 'x1' }), ev({ id: 'd2', title: 'Dentist', date: plus(-10), for_ids: ['k3'], driver: 's1' })],
     ideas: [{ id: 'i1', title: 'Museum', date: '', time: '', for_ids: [], cost: '$20', link: '', note: '' }],
   });
-  const { agent, claude } = make([useMany(['search_events', { person: 'Reid', text: 'dentist', newest_first: true, limit: 1 }], ['count_events', { group_by: 'driver' }], ['list_ideas', {}]), say('Reid last saw the dentist recently.')]);
-  await agent.ask('when did Reid last see the dentist?', []);
+  const { agent, claude } = make([useMany(['search_events', { person: 'Ivy', text: 'dentist', newest_first: true, limit: 1 }], ['count_events', { group_by: 'driver' }], ['list_ideas', {}]), say('Ivy last saw the dentist recently.')]);
+  await agent.ask('when did Ivy last see the dentist?', []);
   const [s, c, i] = lastToolResults(claude).map((x) => JSON.parse(x.content));
-  assert.equal(s[0].id, 'd2'); assert.deepEqual(c, { Jenn: 1, Sarah: 1 }); assert.equal(i[0].title, 'Museum');
+  assert.equal(s[0].id, 'd2'); assert.deepEqual(c, { Rose: 1, Alex: 1 }); assert.equal(i[0].title, 'Museum');
 });
 
 test('add_idea puts a maybe on the shelf', async () => {
   const { store, make } = setup();
-  const { agent } = make([use('add_idea', { title: 'Paul Rosolie talk', for: ['Sarah', 'Mikey'], cost: '$30' }), say('On the shelf.')]);
+  const { agent } = make([use('add_idea', { title: 'Paul Rosolie talk', for: ['Alex', 'Jordan'], cost: '$30' }), say('On the shelf.')]);
   await agent.ask('save the museum talk for later', []);
   assert.deepEqual(store.ideas[0].for_ids, ['s1', 'm1']);
 });
