@@ -1,0 +1,7 @@
+.build/
+node_modules/
+private/
+*.local.sql
+.env
+.DS_Store
+test-results/
