@@ -23,6 +23,40 @@
   --display: "Atkinson Hyperlegible", system-ui, sans-serif;
 }
 
+/* Morning paper: a newspaper front page, kept friendly. White paper, serif headlines,
+   section-style tabs and a dateline; rounded cards and family colours stay. */
+:root[data-theme="morning"] {
+  --bg: #FDFDFB; --surface: #FFFFFF; --ink: #222222; --muted: #666666; --line: #E3E3E0;
+  --accent: #2D5E8C; --accent-ink: #FFFFFF; --soft: #F2F4F7; --warn: #B4442E; --today: #EEF3F8;
+  --display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --body: "Libre Franklin", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+:root[data-theme="morning"] .top { flex-direction: column; align-items: center; text-align: center; gap: 2px; padding: 22px 0 0; }
+:root[data-theme="morning"] .house { font-size: 2.3rem; font-weight: 600; letter-spacing: -0.015em; }
+:root[data-theme="morning"] .dateline {
+  display: flex; justify-content: space-between; width: 100%; margin-top: 10px; padding: 7px 0;
+  border-top: 1px solid var(--ink); border-bottom: 3px double var(--ink); font-size: 0.82rem; color: var(--ink);
+}
+:root[data-theme="morning"] .top { position: relative; padding-top: 34px; }
+:root[data-theme="morning"] .topbtns { position: absolute; top: 8px; right: 0; gap: 12px; }
+:root[data-theme="morning"] .topbtns .linkish { font-size: 0.85rem; }
+:root[data-theme="morning"] .mcell { border: 1px solid var(--line); }
+:root[data-theme="morning"] .mcell.off { border-color: transparent; }
+:root[data-theme="morning"] .tabs { border-bottom: 1px solid var(--line); padding-bottom: 0; gap: 0; }
+:root[data-theme="morning"] .tab { border-radius: 0; padding: 10px 12px 11px; color: var(--muted); font-weight: 600; }
+:root[data-theme="morning"] .tab[aria-selected="true"] { background: none; color: var(--ink); box-shadow: inset 0 -3px 0 var(--ink); }
+:root[data-theme="morning"] .filters { padding-top: 12px; }
+:root[data-theme="morning"] .range, :root[data-theme="morning"] .mtitle { font: 600 1.2rem/1.2 var(--display); }
+:root[data-theme="morning"] .ev { border: 1px solid var(--line); }
+:root[data-theme="morning"] .evtitle { font: 600 1.06rem/1.3 var(--display); }
+:root[data-theme="morning"] .dnum { font-weight: 600; }
+:root[data-theme="morning"] .subhead, :root[data-theme="morning"] .shead { font: 600 1.15rem/1.3 var(--display); }
+:root[data-theme="morning"] .cardtitle { font: 600 1.06rem/1.3 var(--display); }
+:root[data-theme="morning"] .bubble.them { border: 1px solid var(--line); }
+:root[data-theme="morning"] .fab { background: var(--accent); color: var(--accent-ink); }
+.dateline { display: none; }
+
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {

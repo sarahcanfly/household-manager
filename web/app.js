@@ -9,6 +9,7 @@ const FULLMONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'Jul
 const FALLBACK = '#5C6763';
 const PALETTE = ['#3F6B54', '#8E4767', '#3B5A8A', '#A8752A', '#2E6E75', '#9A4B2E', '#4C5B3F', '#7A4E7E'];
 const THEMES = [
+  { id: 'morning', name: 'Morning paper', hint: 'Newspaper, but friendly', bg: '#FDFDFB' },
   { id: 'paper', name: 'Paper', hint: 'Sage and oat', bg: '#EDEFE8' },
   { id: 'linen', name: 'Linen', hint: 'Warm cream', bg: '#F2ECE1' },
   { id: 'night', name: 'Night', hint: 'Dark', bg: '#141917' },
@@ -29,7 +30,7 @@ let theme = readTheme();
 
 /* ---------- small helpers ---------- */
 
-function readTheme() { try { return localStorage.getItem('hm:theme') || 'paper'; } catch (_) { return 'paper'; } }
+function readTheme() { try { return localStorage.getItem('hm:theme') || 'morning'; } catch (_) { return 'morning'; } }
 function applyTheme(t) {
   theme = t;
   document.documentElement.setAttribute('data-theme', t);
@@ -127,7 +128,9 @@ function render() {
   const pickedCount = Object.keys(picked).filter((k) => picked[k]).length;
 
   root.innerHTML = ''
-    + `<div class="top"><h1 class="house">${esc(title)}</h1><div class="topbtns">`
+    + `<div class="top"><h1 class="house">${esc(title)}</h1>`
+    + `<div class="dateline"><span>${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>`
+    + `<span>${state.events.filter((e) => e.date === todayStr()).length || 'Nothing'} on today${state.pending.length ? `, ${state.pending.length} waiting` : ''}</span></div><div class="topbtns">`
     + `<button class="linkish" data-act="household">Household</button>`
     + `<button class="linkish" data-act="refresh">${busy ? 'Saving…' : 'Refresh'}</button></div></div>`
     + (api.mode === 'demo' ? '<div class="banner">Demo with sample data. Nothing is saved.</div>' : '')
