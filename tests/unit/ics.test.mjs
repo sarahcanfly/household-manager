@@ -59,3 +59,17 @@ test('feed rules: rename, exclude, tag by school and sport', () => {
   const only = ics.applyRules(ics.parseIcs(sample, TZ, '2026-10-10', 28), { include: ['School'] }, members());
   assert.deepEqual(only.map((o) => o.title).sort(), ['No School', 'Oakwood Middle School Open House']);
 });
+
+test('include and tag rules accept /patterns/ so early release can be limited to school levels', () => {
+  const titles = ['Early Release: P, E (PC), M, H (PD)', 'Early Release: M (PD), P, E, H (PC)', 'Early Release: H (PD)',
+    'Early Release:  E (PD), M,H (PC)  No School P (Screening/PD)', 'Early Release: H (PD) No School: E, M',
+    'Early Dismissal: All Levels', "No School: Indigenous Peoples' Day", 'School Committee Open Session', 'FHS Music Concert',
+    'Oakwood Elementary Book Fair', 'No Kindergarten (Incoming K Orientation)'];
+  const items = titles.map((title, i) => ({ title, date: '2026-11-0' + (i % 9 + 1), time: '', place: '', note: '', for_ids: [], uid: 'u' + i }));
+  const rules = { include: ['No School', 'Early Dismissal', '/^Early Release:[^N]*\\b[EM]\\b/', 'Oakwood'],
+    tag: [{ match: '/^(No School|Early (Release|Dismissal))/', who: ['Mia', 'Leo'] }] };
+  const out = ics.applyRules(items, rules, members());
+  assert.deepEqual(out.map((o) => o.title), [titles[0], titles[1], titles[3], titles[4], titles[5], titles[6], titles[9]], 'high-school-only early release dropped; no school for E or M kept');
+  assert.deepEqual(out[0].for_ids, ['k1', 'k2']);
+  assert.deepEqual(out[6].for_ids, [], 'school event not tagged by the pattern');
+});

@@ -168,6 +168,13 @@ function eventFrom(props: Prop[], tz: string, today: string, horizonDays: number
   return out;
 }
 
+/** A rule matches as plain text (any case), or as a pattern when written like /pattern/. */
+function matches(rule: string, title: string): boolean {
+  const m = rule.match(/^\/(.+)\/$/);
+  if (m) { try { return new RegExp(m[1], 'i').test(title); } catch { return false; } }
+  return title.toLowerCase().includes(rule.toLowerCase());
+}
+
 /** Rename, drop, and assign people. Names in rules, not ids, so rules survive a roster rebuild. */
 export function applyRules(items: IcsItem[], rules: FeedRules, members: Member[]): IcsItem[] {
   const lower = (s: string) => s.toLowerCase();
@@ -182,10 +189,10 @@ export function applyRules(items: IcsItem[], rules: FeedRules, members: Member[]
       try { re = new RegExp(r.from); } catch { continue; }
       if (re.test(title)) { title = title.replace(re, r.to); break; }
     }
-    if ((rules.exclude ?? []).some((x) => lower(title).includes(lower(x)) || lower(it.title).includes(lower(x)))) continue;
-    if (rules.include?.length && !rules.include.some((x) => lower(title).includes(lower(x)))) continue;
+    if ((rules.exclude ?? []).some((x) => matches(x, title) || matches(x, it.title))) continue;
+    if (rules.include?.length && !rules.include.some((x) => matches(x, title) || matches(x, it.title))) continue;
     const ids = new Set(it.for_ids);
-    for (const t of rules.tag ?? []) if (lower(title).includes(lower(t.match))) for (const id of idsFor(t.who)) ids.add(id);
+    for (const t of rules.tag ?? []) if (matches(t.match, title)) for (const id of idsFor(t.who)) ids.add(id);
     out.push({ ...it, title: title.slice(0, 120), for_ids: [...ids] });
   }
   return out;
