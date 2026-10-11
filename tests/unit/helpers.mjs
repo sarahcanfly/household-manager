@@ -33,6 +33,8 @@ export class MemoryStore {
   async updateTask(id, patch) { const t = this.tasks.find((x) => x.id === id); if (!t) return null; Object.assign(t, patch); return structuredClone(t); }
   async settings() { return structuredClone(this.s); }
   async insertEvent(row) { const e = ev({ ...row, id: 'n' + (++this.n) }); delete e.created_by; this.events.push(e); return structuredClone(e); }
+  async insertEvents(rows) { for (const r of rows) await this.insertEvent(r); return rows.length; }
+  async deleteSeries(series, from) { const gone = this.events.filter((e) => e.series === series && e.date >= from); this.events = this.events.filter((e) => !gone.includes(e)); return gone; }
   async updateEvent(id, patch) { const e = this.events.find((x) => x.id === id); if (!e) return null; Object.assign(e, patch); return structuredClone(e); }
   async deleteEvent(id) { const i = this.events.findIndex((x) => x.id === id); if (i < 0) return null; return this.events.splice(i, 1)[0]; }
   async insertIdea(row) { const it = { id: 'i' + (++this.n), ...row }; this.ideas.push(it); return it; }

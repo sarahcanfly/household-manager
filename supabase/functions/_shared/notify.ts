@@ -3,7 +3,7 @@
 
 import {
   addDays, awayClashes, conflictLine, conflicts, custodyDays, custodyLabel, dueLabel, namesOf, needsOurDriver,
-  prettyDate, prettyTime, tasksDueBy, weekdayOf, type Ev, type Task, type World,
+  prettyDate, prettyTime, tasksDueBy, timeRange, weekdayOf, type Ev, type Task, type World,
 } from './domain.ts';
 
 export interface Message { subject: string; body: string; sms: string }
@@ -16,7 +16,7 @@ function eventLine(e: Ev, w: World): string {
   // Kids at the other house that day: just a note, the other parent has it covered.
   const away = awayClashes([e, ...w.events.filter((x) => x.date === e.date && x.custody)], w.members)
     .map((c) => ` — ${namesOf(c.kids, w.members).join(' & ')} at ${c.where}`).join('');
-  return `  ${prettyTime(e.time).padEnd(7)} ${e.title}${who.length ? ` (${who.join(' & ')})` : ''}${driver}${away}${e.place ? ` @ ${e.place}` : ''}`;
+  return `  ${timeRange(e.time, e.end_time).padEnd(7)} ${e.title}${who.length ? ` (${who.join(' & ')})` : ''}${driver}${away}${e.place ? ` @ ${e.place}` : ''}`;
 }
 
 const sortByTime = (a: Ev, b: Ev) => (a.time || '00:00').localeCompare(b.time || '00:00');
@@ -88,7 +88,7 @@ export function morningText(w: World, today: string, appUrl: string): Message | 
   const short = (e: Ev) => {
     const who = namesOf(e.for_ids, w.members);
     const note = e.note ? ` — ${e.note.replace(/\s+/g, ' ').slice(0, 80)}` : '';
-    return `${e.time ? prettyTime(e.time) : 'All day'} ${e.title}${who.length && who.length < 4 ? ` (${who.join(' & ')})` : ''}${note}`;
+    return `${e.time ? timeRange(e.time, e.end_time) : 'All day'} ${e.title}${who.length && who.length < 4 ? ` (${who.join(' & ')})` : ''}${note}`;
   };
   const sms = [
     ...(c ? [c] : []),

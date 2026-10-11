@@ -132,7 +132,7 @@ test('history is cleaned; API failure gives a readable reply', async () => {
   const r = await agent.ask('x', []);
   assert.match(r.reply, /Something went wrong/); assert.equal(r.changed, false);
   assert.match((await agent.ask('   ', [])).reply, /What would you like/);
-  assert.equal(TOOLS.length, 11);
+  assert.equal(TOOLS.length, 12);
 });
 
 test('all-day events (custody, no school) say nothing about driving', async () => {
@@ -148,4 +148,56 @@ test('all-day events (custody, no school) say nothing about driving', async () =
   assert.equal('driver' in custody, false);
   assert.equal(soccer.driver, 'unassigned');
   assert.match(claude.calls[0].system, /never say that no driving is needed/);
+});
+
+test('repeating events: one call adds every Mon/Tue/Wed with an end time, skipping no-school days', async () => {
+  const { domain: d } = await import('./helpers.mjs');
+  const today = d.todayIn('America/New_York');
+  const until = d.addDays(today, 27);
+  const mon = (() => { for (let i = 0; i < 7; i++) { const x = d.addDays(today, i); if (d.weekdayOf(x) === 'Monday') return x; } })();
+  const noSchool = d.addDays(mon, 7);
+  const { store, notices, make } = setup({ events: [ev({ id: 'ns', title: 'No School: Columbus Day', date: noSchool, time: '', for_ids: ['k1', 'k2', 'k3'] })] });
+  const { agent, claude } = make([use('add_repeating_event', { title: 'Robotics club', days: ['Monday', 'Tuesday', 'Wednesday'], until, time: '15:00', end_time: '16:30', for: ['Mia'] }), say('Added robotics through the 4 weeks.')]);
+  const r = await agent.ask('Mia has robotics club Mon Tue Wed 3 to 4:30', []);
+  assert.equal(r.changed, true);
+  const rows = store.events.filter((e) => e.title === 'Robotics club');
+  const expected = [];
+  for (let x = today; x <= until; x = d.addDays(x, 1)) if (['Monday', 'Tuesday', 'Wednesday'].includes(d.weekdayOf(x)) && x !== noSchool) expected.push(x);
+  assert.deepEqual(rows.map((e) => e.date), expected);
+  assert.ok(rows.every((e) => e.time === '15:00' && e.end_time === '16:30' && e.series && e.series === rows[0].series && e.for_ids[0] === 'k1'));
+  const res = JSON.parse(lastToolResults(claude)[0].content);
+  assert.deepEqual([res.added, res.skipped_no_school], [expected.length, [noSchool]]);
+  assert.equal(res.driver_missing, true);
+  assert.match(claude.calls[0].system, /use add_repeating_event once/);
+  assert.equal(notices.length, 1, 'one notice for the whole series');
+  // Removing the rest of the series is staged, then done on confirm
+  const second = rows[1];
+  const { agent: a2 } = make([use('delete_event', { id: second.id, whole_series: true }), say('Waiting for you to confirm.')]);
+  const r2 = await a2.ask('cancel robotics from then on', []);
+  assert.match(r2.pending.summary, new RegExp(`every "Robotics club" from .* \\(${expected.length - 1} events\\)`));
+  const c = await a2.confirm(r2.pending.token);
+  assert.match(c.reply, new RegExp(`Deleted ${expected.length - 1} "Robotics club"`));
+  assert.equal(store.events.filter((e) => e.title === 'Robotics club').length, 1);
+});
+
+test('the agent never claims "Done." when it was cut off or changed nothing', async () => {
+  const { make } = setup();
+  const cut = make([{ stop_reason: 'max_tokens', content: [{ type: 'text', text: 'Adding' }, { type: 'tool_use', id: 'x', name: 'add_event', input: { title: 'Robo' } }] }]);
+  const r = await cut.agent.ask('add a lot', []);
+  assert.match(r.reply, /too much for me to do in one go, so nothing was changed/);
+  const empty = make([{ stop_reason: 'end_turn', content: [] }]);
+  assert.match((await empty.agent.ask('hm', [])).reply, /I didn't change anything/);
+});
+
+test('end times: checked, shown, and used for overlaps', async () => {
+  const { domain: d, members: mm } = await import('./helpers.mjs');
+  const m = mm();
+  assert.throws(() => d.cleanFields({ title: 'x', date: d.todayIn('America/New_York'), time: '15:00', end_time: '14:00' }, m, d.todayIn('America/New_York'), false), /end_time must be after/);
+  assert.equal(d.timeRange('15:00', '16:30'), '3–4:30pm');
+  assert.equal(d.timeRange('11:00', '13:00'), '11am–1pm');
+  assert.equal(d.timeRange('15:00', ''), '3pm');
+  const day = d.todayIn('America/New_York');
+  const long = ev({ title: 'Robotics', date: day, time: '15:00', end_time: '16:30', for_ids: ['k1'] });
+  const later = ev({ title: 'Piano', date: day, time: '16:15', for_ids: ['k1'] });
+  assert.equal(d.conflicts([long, later], m).length, 1, '4:15 is inside 3–4:30');
 });

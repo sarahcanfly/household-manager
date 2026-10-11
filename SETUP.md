@@ -162,7 +162,8 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
 
 ## Day to day
 
-- **Ask tab:** "add a dentist appointment for Leo on December 2 at 2pm", "Jordan is taking Ivy Thursday",
+- **Ask tab:** "add a dentist appointment for Leo on December 2 at 2pm", "Aaron has robotics Mon, Tue and Wed
+  3–4:30 until June" (one request adds the whole run, skipping no-school days; "cancel robotics from next week" removes the rest), "Jordan is taking Ivy Thursday",
   "when did Mia last see the orthodontist?" Tap the microphone to talk. Deleting and changing existing
   events always waits for you to tap **Yes, do it**.
 - **Inbox:** paste an email or calendar file, or snap a flyer. Nothing reaches the calendar until you approve it.

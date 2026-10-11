@@ -9,7 +9,7 @@ export const PAST_DAYS = 14, FUTURE_DAYS = 400, DURATION_MIN = 60, REMINDER_MIN 
 
 export interface Desired {
   id: string; title: string; description: string; place: string;
-  date: string; time: string; allDay: boolean; colorId: string; hash: string;
+  date: string; time: string; endTime?: string; allDay: boolean; colorId: string; hash: string;
 }
 
 export async function sha256(s: string): Promise<string> {
@@ -56,8 +56,8 @@ export async function desiredEvents(world: World, today: string): Promise<Desire
     const description = calendarDescription(e, world.members);
     const colorId = e.for_ids.length === 1 && index.has(e.for_ids[0]) ? COLOR_IDS[index.get(e.for_ids[0])! % COLOR_IDS.length] : '8';
     out.push({
-      id: e.id, title, description, place: e.place, date: e.date, time: e.time, allDay: !e.time, colorId,
-      hash: await sha256(JSON.stringify([title, description, e.place, e.date, e.time, colorId])),
+      id: e.id, title, description, place: e.place, date: e.date, time: e.time, endTime: e.end_time || '', allDay: !e.time, colorId,
+      hash: await sha256(JSON.stringify([title, description, e.place, e.date, e.time, colorId, ...(e.end_time ? [e.end_time] : [])])),
     });
   }
   return out;
@@ -78,7 +78,7 @@ export function gcalBody(d: Desired, tz: string): Record<string, unknown> {
   if (d.allDay) {
     return { ...base, start: { date: d.date }, end: { date: addDays(d.date, 1) }, reminders: { useDefault: false, overrides: [] } };
   }
-  const end = addMinutes(d.date, d.time, DURATION_MIN);
+  const end = d.endTime && d.endTime > d.time ? { date: d.date, time: d.endTime } : addMinutes(d.date, d.time, DURATION_MIN);
   return {
     ...base,
     start: { dateTime: `${d.date}T${d.time}:00`, timeZone: tz },

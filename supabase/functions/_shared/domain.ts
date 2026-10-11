@@ -7,6 +7,8 @@ export interface Ev {
   id: string; title: string; date: string; time: string;          // time '' = all day, else 'HH:MM'
   for_ids: string[]; driver: string; with_us: string[];            // driver '' undecided, 'none', or member id
   place: string; note: string; source: string;
+  end_time?: string;                                               // '' or 'HH:MM'
+  series?: string;                                                 // shared by the events of one repeating series
   custody?: string;                                                // on custody days from the co-parent calendar: whose house, e.g. "Eli's"
 }
 export interface Pending {
@@ -37,6 +39,7 @@ export function normEvent(r: Record<string, unknown>): Ev {
     id: str(r.id), title: str(r.title), date: str(r.date).slice(0, 10), time: hhmm(r.time),
     for_ids: arr(r.for_ids), driver: str(r.driver), with_us: arr(r.with_us),
     place: str(r.place), note: str(r.note), source: str(r.source), custody: str(r.custody),
+    end_time: hhmm(r.end_time), series: str(r.series),
   };
 }
 export function normTask(r: Record<string, unknown>): Task {
@@ -139,18 +142,23 @@ export function hasKid(ids: string[], members: Member[]): boolean {
   return ids.some((id) => map.get(id)?.kind === 'kid');
 }
 
-export function describe(e: Pick<Ev, 'title' | 'date' | 'time' | 'for_ids'>, members: Member[]): string {
+/** "3pm", or "3–4:30pm" with an end time. */
+export function timeRange(time: string, end?: string): string {
+  if (!time || !end || end <= time) return prettyTime(time);
+  const a = prettyTime(time), b = prettyTime(end);
+  return a.slice(-2) === b.slice(-2) ? `${a.slice(0, -2)}–${b}` : `${a}–${b}`;
+}
+
+export function describe(e: Pick<Ev, 'title' | 'date' | 'time' | 'for_ids'> & { end_time?: string }, members: Member[]): string {
   const who = namesOf(e.for_ids, members);
-  return `${e.title} (${prettyDate(e.date)}, ${prettyTime(e.time)}${who.length ? ', ' + who.join(' & ') : ''})`;
+  return `${e.title} (${prettyDate(e.date)}, ${timeRange(e.time, e.end_time)}${who.length ? ', ' + who.join(' & ') : ''})`;
 }
 
 /* ---------- conflicts and missing drivers ---------- */
 
 const minutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-const overlaps = (a: Ev, b: Ev) => {
-  const as = minutes(a.time), bs = minutes(b.time), d = DEFAULT_DURATION_MIN;
-  return as < bs + d && bs < as + d;
-};
+const endOf = (e: Ev) => (e.end_time && e.end_time > e.time ? minutes(e.end_time) : minutes(e.time) + DEFAULT_DURATION_MIN);
+const overlaps = (a: Ev, b: Ev) => minutes(a.time) < endOf(b) && minutes(b.time) < endOf(a);
 
 export interface Conflict { date: string; a: Ev; b: Ev; why: string[] }
 
@@ -320,7 +328,7 @@ export function validTime(v: unknown): string {
 }
 
 export interface Fields {
-  title?: string; date?: string; time?: string; for_ids?: string[]; driver?: string;
+  title?: string; date?: string; time?: string; end_time?: string; for_ids?: string[]; driver?: string;
   with_us?: string[]; place?: string; note?: string;
 }
 
@@ -335,6 +343,8 @@ export function cleanFields(input: Record<string, unknown>, members: Member[], t
   if (has('date')) out.date = validDate(String(input.date).trim(), today);
   else if (!partial) throw new Invalid('date is required');
   if (has('time')) out.time = validTime(input.time); else if (!partial) out.time = '';
+  if (has('end_time')) out.end_time = validTime(input.end_time); else if (!partial) out.end_time = '';
+  if (out.end_time && out.time !== undefined && (!out.time || out.end_time <= out.time)) throw new Invalid('end_time must be after the start time');
   if (has('for')) out.for_ids = resolveNames(input.for, members).map((m) => m.id);
   else if (!partial) out.for_ids = [];
   if (has('driver')) {
@@ -384,6 +394,7 @@ export function diff(cur: Ev, f: Fields, members: Member[]): string[] {
   if (f.title !== undefined && f.title !== cur.title) out.push(`title: ${cur.title} -> ${f.title}`);
   if (f.date !== undefined && f.date !== cur.date) out.push(`date: ${prettyDate(cur.date)} -> ${prettyDate(f.date)}`);
   if (f.time !== undefined && f.time !== cur.time) out.push(`time: ${prettyTime(cur.time)} -> ${prettyTime(f.time)}`);
+  if (f.end_time !== undefined && f.end_time !== (cur.end_time ?? '')) out.push(`ends: ${cur.end_time ? prettyTime(cur.end_time) : 'not set'} -> ${f.end_time ? prettyTime(f.end_time) : 'not set'}`);
   if (f.for_ids !== undefined && !same(f.for_ids, cur.for_ids)) out.push(`for: ${namesOf(cur.for_ids, members).join(', ') || 'nobody'} -> ${namesOf(f.for_ids, members).join(', ') || 'nobody'}`);
   if (f.driver !== undefined && f.driver !== cur.driver) out.push(`driver: ${driverLabel(cur.driver)} -> ${driverLabel(f.driver)}`);
   if (f.with_us !== undefined && !same(f.with_us, cur.with_us)) out.push(`with us: ${namesOf(cur.with_us, members).join(', ') || 'nobody'} -> ${namesOf(f.with_us, members).join(', ') || 'nobody'}`);

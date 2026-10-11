@@ -53,6 +53,13 @@ function pretty(t, short) {
   h = h % 12 || 12;
   return h + (p[1] === '00' ? '' : ':' + p[1]) + ap;
 }
+/** "3pm", or "3–4:30pm" when there is an end time. */
+function span(e, short) {
+  if (!e.time) return '';
+  if (!e.end || e.end <= e.time) return pretty(e.time, short);
+  const a = pretty(e.time, short), b = pretty(e.end, short), n = short ? 1 : 2;
+  return a.slice(-n) === b.slice(-n) ? `${a.slice(0, -n)}–${b}` : `${a}–${b}`;
+}
 const longDate = (key) => { const d = parseYmd(key); return `${DAYS[d.getDay()].slice(0, 3)} ${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
@@ -288,7 +295,7 @@ function weekHtml() {
     if (!evs.length && !showCust) body += '<div class="none">Nothing yet</div>';
     evs.forEach((e) => {
       body += `<button class="ev" data-act="event" data-id="${e.id}" data-flash="${e.id}"><span class="bar" style="${barStyle(e.for || [])}"></span>`
-        + `<span class="evbody"><span class="evtop"><span class="evtime">${e.time ? pretty(e.time) : 'All day'}</span><span class="evtitle">${esc(e.title)}</span></span>`
+        + `<span class="evbody"><span class="evtop"><span class="evtime">${e.time ? span(e) : 'All day'}</span><span class="evtitle">${esc(e.title)}</span></span>`
         + `<span class="evmeta">${metaPieces(e)}</span></span></button>`;
     });
     body += '</div></section>';
@@ -337,7 +344,7 @@ function monthHtml() {
     const mc = custodyOn(key);
     grid += `<div class="mcell${key === today ? ' now' : ''}${mc ? ' isaway' : ''}"><div class="mnum">${dn}</div>`
       + (mc ? mc.groups.map((g) => `<div class="mcust">${esc(g.where)}</div>`).join('') : '')
-      + evs.slice(0, 3).map((e) => `<div class="mev"><span class="dot" style="${barStyle(e.for || [])}"></span><span>${e.time ? pretty(e.time, true) + ' ' : ''}${esc(e.title)}</span></div>`).join('')
+      + evs.slice(0, 3).map((e) => `<div class="mev"><span class="dot" style="${barStyle(e.for || [])}"></span><span>${e.time ? span(e, true) + ' ' : ''}${esc(e.title)}</span></div>`).join('')
       + (evs.length > 3 ? `<div class="mmore">+${evs.length - 3} more</div>` : '') + '</div>';
   }
   grid += '</div>';
@@ -351,7 +358,7 @@ function monthHtml() {
       + byDay[k].map((e) => {
         const dm = e.driver && e.driver !== 'none' ? member(e.driver) : null;
         const tail = [names(e.for || []), dm ? `${dm.name} driving` : '', e.where].filter(Boolean).join(', ');
-        return `<div class="pev"><span class="dot" style="${barStyle(e.for || [])}"></span><span><span class="ptime">${e.time ? pretty(e.time, true) : 'all day'}</span> ${esc(e.title)} <span class="pwho">${esc(tail)}</span></span></div>`;
+        return `<div class="pev"><span class="dot" style="${barStyle(e.for || [])}"></span><span><span class="ptime">${e.time ? span(e, true) : 'all day'}</span> ${esc(e.title)} <span class="pwho">${esc(tail)}</span></span></div>`;
       }).join('') + '</div></div>';
   });
   list += '</div>';
@@ -611,7 +618,7 @@ function driverHtml() {
 
 function captureDraft() {
   if (!draft) return;
-  ['title', 'date', 'time', 'where', 'cost', 'link', 'note'].forEach((k) => { const el = document.getElementById('f-' + k); if (el) draft[k] = el.value; });
+  ['title', 'date', 'time', 'end', 'where', 'cost', 'link', 'note'].forEach((k) => { const el = document.getElementById('f-' + k); if (el) draft[k] = el.value; });
   const dv = document.getElementById('f-driver');
   if (dv) draft.driver = dv.value;
 }
@@ -646,7 +653,8 @@ function formHtml(isEdit) {
     + `<div class="field"><label for="f-title">What is it</label><input type="text" id="f-title" data-autofocus value="${esc(draft.title)}" placeholder="${event ? 'Orthodontist, soccer practice…' : 'Something you might do'}"></div>`
     + (event
       ? `<div class="stagerow"><div><label class="label" for="f-date">Date</label><input type="date" id="f-date" value="${esc(draft.date || todayStr())}"></div>`
-        + `<div><label class="label" for="f-time">Time (blank for all day)</label><input type="time" id="f-time" value="${esc(draft.time)}"></div></div>`
+        + `<div><label class="label" for="f-time">Starts (blank for all day)</label><input type="time" id="f-time" value="${esc(draft.time)}"></div></div>`
+        + `<div class="stagerow"><div><label class="label" for="f-end">Ends (optional)</label><input type="time" id="f-end" value="${esc(draft.end || '')}"></div><div></div></div>`
         + `<div class="field"><label for="f-where">Where</label><input type="text" id="f-where" value="${esc(draft.where)}"></div>`
       : `<div class="stagerow"><div><label class="label" for="f-date">Date (if there is one)</label><input type="date" id="f-date" value="${esc(draft.date)}"></div>`
         + `<div><label class="label" for="f-time">Time</label><input type="time" id="f-time" value="${esc(draft.time)}"></div></div>`
@@ -740,7 +748,8 @@ function sheetHtml() {
     const d = parseYmd(e.date);
     const dm = e.driver && e.driver !== 'none' ? member(e.driver) : null;
     const lines = [
-      `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}${e.time ? ' at ' + pretty(e.time) : ', all day'}`,
+      `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}${e.time ? ', ' + span(e) : ', all day'}`,
+      e.series ? 'Repeats weekly' : '',
       names(e.for || []),
       dm ? `${dm.name} driving` : e.driver === 'none' ? 'No driving needed' : needsDriver(e) ? 'No driver yet' : '',
       (e.withUs || []).length ? `${names(e.withUs)} with us` : '',
@@ -1028,7 +1037,7 @@ root.addEventListener('click', async (ev) => {
           () => { sheet = null; draft = null; view = 'week'; });
       } else if (addKind === 'event') {
         const nid = uid(), when = draft.date || todayStr();
-        await mutate(() => api.addEvent({ id: nid, title: draft.title.trim(), date: when, time: draft.time, for: draft.for.slice(), driver: draft.driver, withUs: (draft.withUs || []).slice(), where: draft.where, note: draft.note, source: 'manual' }),
+        await mutate(() => api.addEvent({ id: nid, title: draft.title.trim(), date: when, time: draft.time, end: draft.time && draft.end > draft.time ? draft.end : '', for: draft.for.slice(), driver: draft.driver, withUs: (draft.withUs || []).slice(), where: draft.where, note: draft.note, source: 'manual' }),
           () => { sheet = null; draft = null; flashId = nid; view = 'week'; weekOffset = weekOffsetFor(when); });
       } else {
         await mutate(() => api.addIdea({ id: uid(), title: draft.title.trim(), date: draft.date, time: draft.time, for: draft.for.slice(), cost: draft.cost, link: draft.link, note: draft.note }),
@@ -1039,13 +1048,13 @@ root.addEventListener('click', async (ev) => {
     case 'event': sheet = { mode: 'event', id }; render(); break;
     case 'edit-event': {
       const e = eventById(id); if (!e) return;
-      draft = { id: e.id, title: e.title, date: e.date, time: e.time, where: e.where, cost: '', link: '', note: e.note, for: (e.for || []).slice(), driver: e.driver, withUs: (e.withUs || []).slice() };
+      draft = { id: e.id, title: e.title, date: e.date, time: e.time, end: e.end || '', where: e.where, cost: '', link: '', note: e.note, for: (e.for || []).slice(), driver: e.driver, withUs: (e.withUs || []).slice() };
       addKind = 'event'; sheet = { mode: 'edit', id: e.id }; render(); break;
     }
     case 'save-edit': {
       if (!draft.title.trim()) { document.getElementById('f-title')?.focus(); return; }
       const edited = draft.date || todayStr(), eid = draft.id;
-      await mutate(() => api.updateEvent({ id: eid, title: draft.title.trim(), date: edited, time: draft.time, for: draft.for.slice(), driver: draft.driver, withUs: (draft.withUs || []).slice(), where: draft.where, note: draft.note }),
+      await mutate(() => api.updateEvent({ id: eid, title: draft.title.trim(), date: edited, time: draft.time, end: draft.time && draft.end > draft.time ? draft.end : '', for: draft.for.slice(), driver: draft.driver, withUs: (draft.withUs || []).slice(), where: draft.where, note: draft.note }),
         () => { sheet = null; flashId = eid; draft = null; view = 'week'; weekOffset = weekOffsetFor(edited); });
       break;
     }

@@ -6,7 +6,8 @@
 
 import {
   awayClashes, awayLine, conflictLine, conflicts, custodyRanges, describe, diff, dueLabel, hasKid, isFillOnly,
-  namesOf, needsOurDriver, prettyDate, cleanFields, todayIn, weekdayOf, Invalid, type Ev, type Fields, type World,
+  namesOf, needsOurDriver, prettyDate, cleanFields, todayIn, weekdayOf, addDays, timeRange, validDate, Invalid,
+  type Ev, type Fields, type World,
 } from './domain.ts';
 import type { EventRow, Store, TaskPatch } from './store.ts';
 import { textOf, type Block, type ClaudeFn } from './claude.ts';
@@ -27,7 +28,8 @@ export interface AskResult { reply: string; pending: { token: string; summary: s
 const eventFields = {
   title: { type: 'string' },
   date: { type: 'string', description: 'YYYY-MM-DD' },
-  time: { type: 'string', description: 'HH:mm, 24-hour. Empty string for all day.' },
+  time: { type: 'string', description: 'Start, HH:mm, 24-hour. Empty string for all day.' },
+  end_time: { type: 'string', description: 'End, HH:mm, 24-hour, if known.' },
   for: { type: 'array', items: { type: 'string' }, description: 'First names of the people it is for' },
   driver: { type: 'string', description: "First name of whoever is taking the kids, or 'none' if no driving is needed. Omit if undecided." },
   with_us: { type: 'array', items: { type: 'string' }, description: 'Kids who are at home with the adults that day' },
@@ -56,10 +58,19 @@ export const TOOLS = [
   { name: 'add_idea', description: 'Put something on the shelf (a maybe, not on the calendar). Takes effect immediately.',
     input_schema: { type: 'object', properties: { title: { type: 'string' }, date: { type: 'string', description: 'YYYY-MM-DD, optional' },
       for: eventFields.for, cost: { type: 'string' }, link: { type: 'string' }, note: { type: 'string' } }, required: ['title'] } },
+  { name: 'add_repeating_event', description: 'Add something that repeats every week on certain days ("robotics Mon, Tue and Wed 3–4:30pm until June"). One call adds every occurrence. Takes effect immediately. Skips days the kid already has a "No school" event.',
+    input_schema: { type: 'object', properties: {
+      title: eventFields.title, days: { type: 'array', items: { type: 'string', enum: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] } },
+      start: { type: 'string', description: 'YYYY-MM-DD, first possible day (default today)' },
+      until: { type: 'string', description: 'YYYY-MM-DD, last possible day' },
+      every_weeks: { type: 'integer', description: '1 = every week (default), 2 = every other week' },
+      time: eventFields.time, end_time: eventFields.end_time, for: eventFields.for, driver: eventFields.driver, where: eventFields.where, note: eventFields.note,
+    }, required: ['title', 'days', 'until'] } },
   { name: 'update_event', description: 'Change fields of an existing event (only the fields that change). Filling in a blank driver, place or note happens immediately; any other change waits for the person to tap Confirm.',
     input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Event id, from search_events' }, ...eventFields }, required: ['id'] } },
-  { name: 'delete_event', description: 'Delete an event. Only staged: the person must tap Confirm before anything is removed.',
-    input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Event id, from search_events' } }, required: ['id'] } },
+  { name: 'delete_event', description: 'Delete an event, or with whole_series every remaining event in its repeating series from that date on. Only staged: the person must tap Confirm before anything is removed.',
+    input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Event id, from search_events' },
+      whole_series: { type: 'boolean', description: 'Also remove the later events of the same repeating series' } }, required: ['id'] } },
   { name: 'list_tasks', description: 'The to-do list: things to do by a date (forms, sign-ups, payments). Open ones by default, soonest due first.',
     input_schema: { type: 'object', properties: { include_done: { type: 'boolean', description: 'Also list ones ticked off in the last two months' } } } },
   { name: 'add_task', description: 'Add a to-do with a due date (not a calendar event): "return the permission slip by Friday", "register for soccer when it opens Nov 1", "pay the camp deposit". Takes effect immediately.',
@@ -70,7 +81,9 @@ export const TOOLS = [
       title: { type: 'string' }, due: { type: 'string', description: 'YYYY-MM-DD' }, for: eventFields.for, note: { type: 'string' } }, required: ['id'] } },
 ];
 
-const WRITE = new Set(['add_event', 'add_idea', 'update_event', 'delete_event', 'add_task', 'update_task']);
+const WRITE = new Set(['add_event', 'add_repeating_event', 'add_idea', 'update_event', 'delete_event', 'add_task', 'update_task']);
+const MAX_REPEATS = 150;
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /* ---------- reading ---------- */
 
@@ -81,7 +94,8 @@ function driverName(e: Ev, w: World): string {
 // Driving only matters for timed events; all-day ones (custody days, no-school days) leave it out
 // so the agent has nothing to say about it.
 function slim(e: Ev, w: World) {
-  const row: Record<string, unknown> = { id: e.id, date: e.date, time: e.time || 'all day', title: e.title, for: namesOf(e.for_ids, w.members) };
+  const row: Record<string, unknown> = { id: e.id, date: e.date, time: e.time ? timeRange(e.time, e.end_time) : 'all day', title: e.title, for: namesOf(e.for_ids, w.members) };
+  if (e.series) row.repeating = true;
   if (e.time) row.driver = driverName(e, w);
   if (e.place) row.where = e.place;
   if (e.note) row.note = e.note;
@@ -132,6 +146,7 @@ function toRow(f: Fields): Partial<EventRow> {
   if (f.title !== undefined) r.title = f.title;
   if (f.date !== undefined) r.date = f.date;
   if (f.time !== undefined) r.time = f.time;
+  if (f.end_time !== undefined) r.end_time = f.end_time;
   if (f.for_ids !== undefined) r.for_ids = f.for_ids;
   if (f.driver !== undefined) r.driver = f.driver;
   if (f.with_us !== undefined) r.with_us = f.with_us;
@@ -183,6 +198,45 @@ export class Agent {
     return res;
   }
 
+  async addRepeating(input: Record<string, unknown>) {
+    const w = await this.d.store.world();
+    const today = this.today();
+    const start = input.start ? validDate(String(input.start), today) : today;
+    const until = validDate(String(input.until ?? ''), today);
+    if (until < start) throw new Invalid('until is before start');
+    const days = (Array.isArray(input.days) ? input.days : []).map((x) => WEEKDAY_NAMES.findIndex((n) => n.toLowerCase().startsWith(String(x).toLowerCase().slice(0, 3))));
+    if (!days.length || days.includes(-1)) throw new Invalid('days must be weekday names');
+    const every = Math.min(4, Math.max(1, Number(input.every_weeks) || 1));
+    const f = cleanFields({ ...input, date: start }, w.members, today, false);
+    if (!hasKid(f.for_ids!, w.members)) f.driver = '';
+    // Days a kid in it already has "No school" (holidays, PD days) are skipped.
+    const noSchool = new Set(w.events.filter((e) => /no school/i.test(e.title) && f.for_ids!.some((id) => e.for_ids.includes(id))).map((e) => e.date));
+    const firstWeek = addDays(start, -WEEKDAY_NAMES.indexOf(weekdayOf(start)));   // Sunday of the start week
+    const dates: string[] = [], skipped: string[] = [];
+    for (let d = start; d <= until && dates.length <= MAX_REPEATS; d = addDays(d, 1)) {
+      const dow = WEEKDAY_NAMES.indexOf(weekdayOf(d));
+      const week = Math.floor((Date.parse(d) - Date.parse(firstWeek)) / (7 * 86400000));
+      if (!days.includes(dow) || week % every) continue;
+      if (noSchool.has(d)) { skipped.push(d); continue; }
+      if (w.events.some((e) => e.date === d && e.time === f.time && e.title.toLowerCase() === f.title!.toLowerCase())) continue;
+      dates.push(d);
+    }
+    if (dates.length > MAX_REPEATS) throw new Invalid(`That is more than ${MAX_REPEATS} events. Use a nearer end date.`);
+    if (!dates.length) throw new Invalid('No days fall in that range (or they are all on the calendar already). Nothing added.');
+    this.countWrite();
+    const series = crypto.randomUUID().slice(0, 8);
+    const base = { ...(toRow(f) as EventRow), source: 'agent', created_by: this.d.actor, series };
+    await this.d.store.insertEvents(dates.map((date) => ({ ...base, date })));
+    await this.d.store.log(this.d.actor, 'agent addRepeating', `${series} ${dates.length}x ${f.title} ${dates[0]}..${dates.at(-1)}`);
+    const label = `${f.title} (${days.map((i) => WEEKDAY_NAMES[i]).join(', ')}${every > 1 ? `, every ${every} weeks` : ''}${f.time ? ' ' + timeRange(f.time, f.end_time) : ''})`;
+    try { await this.d.notify(`Added: ${label}`, [`Added ${dates.length} times: ${label}, ${prettyDate(dates[0])} to ${prettyDate(dates.at(-1)!)}  (by ${this.d.actor})`], this.d.actor); } catch { /* best effort */ }
+    const w2 = await this.d.store.world();
+    const mine = w2.events.filter((e) => e.series === series);
+    const clashes = conflicts(w2.events.filter((e) => dates.includes(e.date)), w2.members).filter((c) => mine.some((m) => m.id === c.a.id || m.id === c.b.id));
+    return { ok: true, added: dates.length, first: dates[0], last: dates.at(-1), skipped_no_school: skipped,
+      conflicts: clashes.slice(0, 5).map(conflictLine), driver_missing: mine.some((e) => needsOurDriver(e, w2.events, w2.members)) };
+  }
+
   async addIdea(input: Record<string, unknown>) {
     const w = await this.d.store.world();
     const f = cleanFields({ ...input, date: input.date || undefined }, w.members, this.today(), true);
@@ -218,10 +272,19 @@ export class Agent {
     return { ...res, message: `Updated: ${res.event}.` };
   }
 
-  async remove(id: string, confirmed: boolean) {
+  async remove(id: string, confirmed: boolean, wholeSeries = false) {
     const w = await this.d.store.world();
     const cur = w.events.find((e) => e.id === id);
     if (!cur) throw new Invalid(`No event with id ${id}. Use search_events to find the right one.`);
+    if (wholeSeries && cur.series) {
+      const n = w.events.filter((e) => e.series === cur.series && e.date >= cur.date).length;
+      const label = `every "${cur.title}" from ${prettyDate(cur.date)} on (${n} events)`;
+      if (!confirmed) return this.stage('delete', { id, whole_series: true }, `Delete ${label}?`, []);
+      const gone = await this.d.store.deleteSeries(cur.series, cur.date);
+      await this.d.store.log(this.d.actor, 'agent deleted series', JSON.stringify(gone).slice(0, 5000));
+      try { await this.d.notify(`Deleted: ${label}`, [`Deleted ${label}  (by ${this.d.actor})`], this.d.actor); } catch { /* best effort */ }
+      return { ok: true, message: `Deleted ${gone.length} "${cur.title}" events.` };
+    }
     const label = describe(cur, w.members);
     if (!confirmed) return this.stage('delete', { id }, `Delete ${label}?`, []);
     const gone = await this.d.store.deleteEvent(id);
@@ -272,10 +335,11 @@ export class Agent {
     if (name === 'add_event') return await this.add(input);
     if (name === 'add_idea') return await this.addIdea(input);
     if (name === 'add_task') return await this.addTask(input);
+    if (name === 'add_repeating_event') return await this.addRepeating(input);
     const { id, ...rest } = input;
     if (name === 'update_task') return await this.updateTask(String(id ?? ''), rest);
     if (name === 'update_event') return await this.update(String(id ?? ''), rest, false);
-    if (name === 'delete_event') return await this.remove(String(id ?? ''), false);
+    if (name === 'delete_event') return await this.remove(String(id ?? ''), false, rest.whole_series === true);
     throw new Error(`Unknown tool ${name}`);
   }
 
@@ -284,6 +348,8 @@ export class Agent {
     return `You are the household manager for a family. Today is ${today} (${weekdayOf(today)}). `
       + `Household: ${w.members.filter((m) => m.active).map((m) => `${m.name} (${m.kind})`).join(', ')}. `
       + 'You can look things up and change the calendar with add_event, update_event and delete_event, and add maybes to the shelf with add_idea. '
+      + 'For anything that repeats weekly use add_repeating_event once, never many add_event calls. If no end date is given, '
+      + 'use the end of the school year (mid-June) for school activities and 12 weeks otherwise, and say which you picked. '
       + 'Add events straight away when the request is clear. Deleting and most edits wait for the person to tap a Confirm button in the app: '
       + 'when a tool says a change is staged, say what is waiting and that they need to tap Confirm; never say it is done. '
       + 'Work out relative dates ("Thursday", "next month") from today; for a month and day with no year, use the next one still ahead. '
@@ -307,11 +373,17 @@ export class Agent {
     const messages: { role: string; content: unknown }[] = cleanHistory(history, msg);
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
-        const r = await this.d.claude({ system: this.system(w), tools: TOOLS, messages, max_tokens: 1024 });
+        const r = await this.d.claude({ system: this.system(w), tools: TOOLS, messages, max_tokens: 2048 });
         messages.push({ role: 'assistant', content: r.content });
+        if (r.stop_reason === 'max_tokens') {
+          // Cut off mid-answer: any half-written tool calls are not run.
+          await this.d.store.log(this.d.actor, 'ask cut off', msg);
+          return { reply: `That was too much for me to do in one go${this.changed ? ' (part of it was saved)' : ', so nothing was changed'}. Try asking in smaller pieces.`, pending: this.pending, changed: this.changed };
+        }
         if (r.stop_reason !== 'tool_use') {
           await this.d.store.log(this.d.actor, 'ask', msg);
-          return { reply: textOf(r.content) || 'Done.', pending: this.pending, changed: this.changed };
+          const fallback = this.changed ? 'Done.' : this.pending ? 'That is waiting for you to confirm.' : "I didn't change anything. Could you say that another way?";
+          return { reply: textOf(r.content) || fallback, pending: this.pending, changed: this.changed };
         }
         const results = [];
         for (const b of r.content.filter((x: Block) => x.type === 'tool_use')) {
@@ -340,7 +412,7 @@ export class Agent {
     if (!p) return { reply: 'That request expired. Ask me again.', changed: false };
     try {
       const id = String(p.args.id ?? '');
-      const res = p.action === 'delete' ? await this.remove(id, true) : await this.update(id, (p.args.fields ?? {}) as Record<string, unknown>, true);
+      const res = p.action === 'delete' ? await this.remove(id, true, p.args.whole_series === true) : await this.update(id, (p.args.fields ?? {}) as Record<string, unknown>, true);
       return { reply: String((res as { message?: string }).message ?? 'Done.'), changed: true };
     } catch (e) {
       return { reply: `I could not do that: ${(e as Error).message}`, changed: false };

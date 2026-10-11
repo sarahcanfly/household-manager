@@ -1,6 +1,6 @@
 // Keeps the app shell available offline and loading instantly. Data always comes
 // fresh from the network; only the app's own files are cached.
-const CACHE = 'household-v12';
+const CACHE = 'household-v13';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'backend.js', 'demo.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

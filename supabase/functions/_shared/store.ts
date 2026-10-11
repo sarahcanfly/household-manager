@@ -42,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export interface EventRow {
   title: string; date: string; time: string; for_ids: string[]; driver: string;
   with_us: string[]; place: string; note: string; source: string; created_by?: string;
+  end_time?: string; series?: string;
 }
 
 export interface StageRow {
@@ -56,6 +57,9 @@ export interface Store extends SyncStore {
   world(): Promise<World>;
   settings(): Promise<Settings>;
   insertEvent(row: EventRow): Promise<Ev>;
+  /** Many at once (one request, so the calendar sync runs once). */
+  insertEvents(rows: EventRow[]): Promise<number>;
+  deleteSeries(series: string, from: string): Promise<Ev[]>;
   updateEvent(id: string, patch: Partial<EventRow>): Promise<Ev | null>;
   deleteEvent(id: string): Promise<Ev | null>;
   insertIdea(row: Omit<Idea, 'id'>): Promise<Idea>;
@@ -72,6 +76,7 @@ function toDb(p: Partial<EventRow>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...p };
   if ('time' in p) out.time = p.time || null;
   if ('driver' in p) out.driver = p.driver || null;
+  if ('end_time' in p) out.end_time = p.end_time || null;
   return out;
 }
 
@@ -99,6 +104,15 @@ export class RestStore implements Store {
   }
 
   async insertEvent(row: EventRow) { return normEvent((await this.db.insert('events', toDb(row)))[0]); }
+  async insertEvents(rows: EventRow[]) {
+    if (!rows.length) return 0;
+    await this.db.req('POST', 'events', rows.map(toDb), 'return=minimal');
+    return rows.length;
+  }
+  async deleteSeries(series: string, from: string) {
+    if (!series) return [];
+    return (await this.db.remove('events', `series=${eq(series)}&date=gte.${from}`)).map(normEvent);
+  }
   async updateEvent(id: string, patch: Partial<EventRow>) {
     const r = await this.db.update('events', `id=${eq(id)}`, toDb(patch));
     return r[0] ? normEvent(r[0]) : null;

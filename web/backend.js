@@ -4,15 +4,15 @@
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 
 const hm = (t) => (t ? String(t).slice(0, 5) : '');
-const toEvent = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.time), for: r.for_ids || [], driver: r.driver || '', withUs: r.with_us || [], where: r.place || '', note: r.note || '', source: r.source || '', custody: r.custody || '' });
+const toEvent = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.time), end: hm(r.end_time), series: r.series || '', for: r.for_ids || [], driver: r.driver || '', withUs: r.with_us || [], where: r.place || '', note: r.note || '', source: r.source || '', custody: r.custody || '' });
 const toPending = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.time), for: r.for_ids || [], where: r.place || '', note: r.note || '', source: r.source, sourceRef: r.source_ref || '', confidence: r.confidence, kind: r.kind || 'event' });
 const toTask = (r) => ({ id: r.id, title: r.title, due: r.due, for: r.for_ids || [], note: r.note || '', done: !!r.done, source: r.source || '' });
 const taskRow = (t) => ({ title: t.title, due: t.due, for_ids: t.for || [], note: t.note || '' });
 const toIdea = (r) => ({ id: r.id, title: r.title, date: r.date || '', time: hm(r.time), for: r.for_ids || [], cost: r.cost || '', link: r.link || '', note: r.note || '' });
-const eventRow = (e) => ({ title: e.title, date: e.date, time: e.time || null, for_ids: e.for || [], driver: e.driver || null, with_us: e.withUs || [], place: e.where || '', note: e.note || '' });
+const eventRow = (e) => ({ title: e.title, date: e.date, time: e.time || null, end_time: (e.time && e.end) || null, for_ids: e.for || [], driver: e.driver || null, with_us: e.withUs || [], place: e.where || '', note: e.note || '' });
 const pendingPayload = (p) => ({ id: p.id, title: p.title, date: p.date, time: p.time || '', for_ids: p.for || [], driver: p.driver || '', with_us: p.withUs || [], place: p.where || '', note: p.note || '' });
 const ideaJson = (i) => ({ id: i.id, title: i.title, date: i.date || '', time: i.time || '', for_ids: i.for || [], cost: i.cost || '', link: i.link || '', note: i.note || '' });
-const eventJson = (e) => ({ id: e.id, ...eventRow(e), time: e.time || '', driver: e.driver || '', source: e.source || 'manual' });
+const eventJson = (e) => ({ id: e.id, ...eventRow(e), time: e.time || '', end_time: e.end || '', driver: e.driver || '', source: e.source || 'manual', series: e.series || '' });
 
 export async function createLiveBackend(cfg) {
   const { createClient } = await import(SUPABASE_JS);
