@@ -62,10 +62,14 @@ test('live music gets its own section and its own limit; each suggestion links t
   const lines = L.localLines(list, 'https://mikeysarah.netlify.app');
   const i = lines.indexOf('Live music this week:');
   assert.ok(i > 0 && lines[0] === 'Around town this week:' && lines[i - 1] === '');
-  const add = lines.find((l) => l.includes('Band on the common') === false && l.startsWith('  Add to calendar:') && l.includes('Band'));
-  const url = new URL(add.replace('  Add to calendar: ', ''));
+  const row = lines.find((l) => l.startsWith('  [Details](https://town.example/music)'));
+  const links = Object.fromEntries([...row.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)].map((m) => [m[1], m[2]]));
+  assert.deepEqual(Object.keys(links), ['Details', 'Add to calendar', '👍 Interested', '👎 Not for us']);
+  const url = new URL(links['Add to calendar']);
   assert.equal(url.origin, 'https://mikeysarah.netlify.app');
-  assert.deepEqual(Object.fromEntries(url.searchParams), { add: '1', title: 'Band on the common', date: '2026-10-16', time: '19:00', where: 'Framingham Common', note: 'Free · https://town.example/music' });
+  assert.deepEqual(Object.fromEntries(url.searchParams), { add: '1', title: 'Band on the common', date: '2026-10-16', time: '19:00', where: 'Framingham Common', note: 'Free · https://town.example/music', kind: 'music' });
+  assert.deepEqual(Object.fromEntries(new URL(links['👍 Interested']).searchParams), { rate: 'up', title: 'Band on the common', kind: 'music', where: 'Framingham Common' });
+  assert.equal(new URL(links['👎 Not for us']).searchParams.get('rate'), 'down');
   assert.match(L.localPrompt(L.DEFAULT_LOCAL, members(), start), /up to 3 live music shows/);
   assert.doesNotMatch(L.localPrompt({ ...L.DEFAULT_LOCAL, music: false }, members(), start), /live music/);
 });
@@ -80,4 +84,30 @@ test('emails go out with bold headings and real links', async () => {
   assert.match(html, /<a href="https:\/\/x.example\/a\?b=1&amp;c=2"[^>]*>Details<\/a>/);
   assert.match(html, />Add to calendar<\/a>/);
   assert.doesNotMatch(html, /font-weight:700[^>]*>- NO DRIVER/, 'list lines are not headings');
+});
+
+test('likes and dislikes steer the next search', () => {
+  const taste = L.tasteFrom([
+    { title: 'Band on the common', kind: 'music', place: 'Framingham Common', vote: 1, how: 'rated' },
+    { title: 'Pumpkin festival', kind: 'event', place: 'Ashland Farm', vote: 1, how: 'added' },
+    { title: 'Craft fair', kind: 'event', place: '', vote: -1, how: 'rated' },
+    { title: 'bluegrass', kind: 'note', place: '', vote: 1, how: 'told' },
+    { title: 'big crowds', kind: 'note', place: '', vote: -1, how: 'told' },
+    { title: 'Craft fair', kind: 'event', place: '', vote: -1, how: 'rated' }]);
+  assert.deepEqual(taste, {
+    liked: ['Band on the common (Framingham Common) [music]', 'Pumpkin festival (Ashland Farm)'],
+    disliked: ['Craft fair'],
+    said: ['likes: bluegrass', 'does not like: big crowds'] });
+  const p = L.localPrompt(L.DEFAULT_LOCAL, members(), start, taste);
+  assert.match(p, /They told us: likes: bluegrass; does not like: big crowds/);
+  assert.match(p, /Interested in: Band on the common/);
+  assert.match(p, /Not for them: Craft fair/);
+  assert.match(p, /do not suggest the exact same events again/);
+  assert.doesNotMatch(L.localPrompt(L.DEFAULT_LOCAL, members(), start, L.tasteFrom([])), /earlier suggestions/);
+});
+
+test('a row of [label](url) links becomes links in the email', async () => {
+  const { textToHtml } = await import(B + 'mail.js');
+  const html = textToHtml('  [Details](https://a.example/x?y=1&z=2) · [👍 Interested](https://app.example/?rate=up&title=Jazz)');
+  assert.match(html, /<a href="https:\/\/a.example\/x\?y=1&amp;z=2"[^>]*>Details<\/a> · <a href="https:\/\/app.example\/\?rate=up&amp;title=Jazz"[^>]*>👍 Interested<\/a>/);
 });

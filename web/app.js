@@ -1000,7 +1000,7 @@ root.addEventListener('click', async (ev) => {
       if (i > -1) draft.withUs.splice(i, 1); else draft.withUs.push(id);
       render(); break;
     }
-    case 'close': case 'scrim': sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; render(); break;
+    case 'close': case 'scrim': fromEmail = null; sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; render(); break;
     case 'push-on':
       busy = true; render();
       try { await turnOnPush(); if (pushState === 'on') info = 'Notifications are on. A test is on its way.'; } catch (err) { errMsg = err.message; }
@@ -1032,6 +1032,8 @@ root.addEventListener('click', async (ev) => {
 
     case 'create': {
       if (!draft.title.trim()) { document.getElementById('f-title')?.focus(); return; }
+      // Adding a weekly-email suggestion (to the calendar or the shelf) counts as liking it.
+      if (fromEmail) { const f = fromEmail; fromEmail = null; api.rateEvent({ ...f, vote: 1, how: 'added' }).catch(() => {}); }
       if (addKind === 'task') {
         await mutate(() => api.addTask({ id: uid(), title: draft.title.trim(), due: draft.date || todayStr(), for: draft.for.slice(), note: draft.note }),
           () => { sheet = null; draft = null; view = 'week'; });
@@ -1185,19 +1187,32 @@ window.addEventListener('offline', () => { offline = true; render(); });
 let unsubscribe = null;
 
 /* A link like ?add=1&title=…&date=…&time=…&where=…&note=… (from the weekly email) opens a filled-in Add form. */
-let incoming = null;
+let incoming = null, rating = null, fromEmail = null;
 function readIncoming() {
   const q = new URLSearchParams(location.search);
-  if (q.get('add') !== '1') return;
   const clip = (k, n) => (q.get(k) || '').slice(0, n);
-  incoming = { title: clip('title', 200), date: /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '') ? q.get('date') : '',
+  if (q.get('rate') === 'up' || q.get('rate') === 'down') {
+    rating = { title: clip('title', 200), kind: q.get('kind') === 'music' ? 'music' : 'event', where: clip('where', 300), vote: q.get('rate') === 'up' ? 1 : -1 };
+  }
+  if (q.get('add') !== '1' && !rating) return;
+  if (q.get('add') === '1') incoming = { kind: q.get('kind') === 'music' ? 'music' : 'event', title: clip('title', 200), date: /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '') ? q.get('date') : '',
     time: /^\d{2}:\d{2}$/.test(q.get('time') || '') ? q.get('time') : '', where: clip('where', 300), note: clip('note', 1000) };
   const keep = new URLSearchParams(); if (q.has('demo')) keep.set('demo', '');
   history.replaceState(null, '', location.pathname + (keep.toString() ? '?' + keep.toString().replace(/=$/, '') : ''));
 }
-function openIncoming() {
+async function openIncoming() {
+  if (rating && state) {
+    const r = rating; rating = null;
+    try {
+      if (r.title) await api.rateEvent(r);
+      info = r.vote > 0 ? `Noted: interested in "${r.title}". Future suggestions will lean that way.` : `Noted: "${r.title}" is not for you. You'll see fewer like it.`;
+    } catch (err) { errMsg = err.message; }
+    render();
+  }
   if (!incoming || !state) return;
-  draft = { ...newDraft(), ...incoming, date: incoming.date || todayStr() };
+  fromEmail = { title: incoming.title, kind: incoming.kind, where: incoming.where };
+  const { kind: _k, ...fields } = incoming;
+  draft = { ...newDraft(), ...fields, date: incoming.date || todayStr() };
   addKind = 'event'; sheet = { mode: 'add' }; incoming = null;
   info = 'From the weekly email. Check the details, then add it (or switch to Shelf to keep it as a maybe).';
   render();
@@ -1210,7 +1225,7 @@ async function enter() {
     if (!(await api.isAllowed())) { gate = 'denied'; render(); return; }
     gate = null;
     await load();
-    openIncoming();
+    await openIncoming();
     if (unsubscribe) unsubscribe();
     unsubscribe = api.onChange(() => { if (!busy && !sheet && !parsing) load(); });
   } catch (err) { gate = 'error'; gateErr = err.message; render(); }

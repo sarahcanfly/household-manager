@@ -76,12 +76,14 @@ export const TOOLS = [
   { name: 'add_task', description: 'Add a to-do with a due date (not a calendar event): "return the permission slip by Friday", "register for soccer when it opens Nov 1", "pay the camp deposit". Takes effect immediately.',
     input_schema: { type: 'object', properties: { title: { type: 'string', description: 'What to do' }, due: { type: 'string', description: 'YYYY-MM-DD' },
       for: eventFields.for, note: { type: 'string' } }, required: ['title', 'due'] } },
+  { name: 'save_event_taste', description: 'Remember what kind of outings and events the household likes or does not ("we love bluegrass", "no big crowds", "the kids hate museums"), so the weekly "Around town" suggestions fit them better.',
+    input_schema: { type: 'object', properties: { thing: { type: 'string', description: 'What they like or dislike, in a few words' }, liked: { type: 'boolean' } }, required: ['thing', 'liked'] } },
   { name: 'update_task', description: 'Tick off (done: true), reopen, or change a to-do. Takes effect immediately.',
     input_schema: { type: 'object', properties: { id: { type: 'string', description: 'To-do id, from list_tasks' }, done: { type: 'boolean' },
       title: { type: 'string' }, due: { type: 'string', description: 'YYYY-MM-DD' }, for: eventFields.for, note: { type: 'string' } }, required: ['id'] } },
 ];
 
-const WRITE = new Set(['add_event', 'add_repeating_event', 'add_idea', 'update_event', 'delete_event', 'add_task', 'update_task']);
+const WRITE = new Set(['add_event', 'add_repeating_event', 'add_idea', 'update_event', 'delete_event', 'add_task', 'update_task', 'save_event_taste']);
 const MAX_REPEATS = 150;
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -336,6 +338,12 @@ export class Agent {
     if (name === 'add_idea') return await this.addIdea(input);
     if (name === 'add_task') return await this.addTask(input);
     if (name === 'add_repeating_event') return await this.addRepeating(input);
+    if (name === 'save_event_taste') {
+      const thing = String(input.thing ?? '').trim().slice(0, 120);
+      if (!thing) throw new Invalid('thing is required');
+      await this.d.store.insertTaste({ title: thing, kind: 'note', place: '', vote: input.liked === false ? -1 : 1, how: 'told', by_email: this.d.actor });
+      return { ok: true, remembered: `${input.liked === false ? 'not into' : 'likes'}: ${thing}` };
+    }
     const { id, ...rest } = input;
     if (name === 'update_task') return await this.updateTask(String(id ?? ''), rest);
     if (name === 'update_event') return await this.update(String(id ?? ''), rest, false);

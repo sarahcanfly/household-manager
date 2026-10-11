@@ -132,7 +132,7 @@ test('history is cleaned; API failure gives a readable reply', async () => {
   const r = await agent.ask('x', []);
   assert.match(r.reply, /Something went wrong/); assert.equal(r.changed, false);
   assert.match((await agent.ask('   ', [])).reply, /What would you like/);
-  assert.equal(TOOLS.length, 12);
+  assert.equal(TOOLS.length, 13);
 });
 
 test('all-day events (custody, no school) say nothing about driving', async () => {
@@ -200,4 +200,11 @@ test('end times: checked, shown, and used for overlaps', async () => {
   const long = ev({ title: 'Robotics', date: day, time: '15:00', end_time: '16:30', for_ids: ['k1'] });
   const later = ev({ title: 'Piano', date: day, time: '16:15', for_ids: ['k1'] });
   assert.equal(d.conflicts([long, later], m).length, 1, '4:15 is inside 3–4:30');
+});
+
+test('the agent can remember what kind of outings the household likes', async () => {
+  const { store, make } = setup();
+  const { agent } = make([use('save_event_taste', { thing: 'bluegrass and folk music', liked: true }), say('Got it.')]);
+  await agent.ask('we love bluegrass and folk', []);
+  assert.deepEqual(store.taste, [{ title: 'bluegrass and folk music', kind: 'note', place: '', vote: 1, how: 'told', by_email: 'alex@x.com' }]);
 });

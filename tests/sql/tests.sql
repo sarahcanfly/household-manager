@@ -203,6 +203,15 @@ select pg_temp.check((select count(*) from public.tasks) = 0, 'stranger sees no 
 reset role;
 select pg_temp.check((select custody from public.events limit 1) = '', 'custody defaults to empty');
 
+-- 5e. Event likes
+select pg_temp.as_user('alex@x.com');
+insert into public.event_taste (title, kind, vote) values ('Band on the common', 'music', 1);
+select pg_temp.check((select by_email from public.event_taste) = 'alex@x.com', 'a like records who gave it');
+reset role;
+select pg_temp.as_user('stranger@x.com');
+select pg_temp.check((select count(*) from public.event_taste) = 0, 'stranger sees no likes');
+reset role;
+
 -- 6. Removing someone from allowed_users locks them out immediately
 delete from public.allowed_users where email = 'jordan@x.com';
 select pg_temp.as_user('jordan@x.com');

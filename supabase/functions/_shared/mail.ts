@@ -23,6 +23,12 @@ export function textToHtml(text: string): string {
       out.push(`<div style="padding-left:${link[1].length ? 16 : 0}px;margin:2px 0"><a href="${escHtml(link[3])}" style="color:#2E5E8C">${escHtml(link[2])}</a></div>`);
       continue;
     }
+    // A row of [label](url) links, e.g. "[Details](…) · [Add to calendar](…)".
+    if (/\[[^\]]+\]\(https?:\/\/[^)\s]+\)/.test(line)) {
+      const html = escHtml(line.trim()).replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, label, url) => `<a href="${url}" style="color:#2E5E8C;white-space:nowrap">${label}</a>`);
+      out.push(`<div style="padding-left:${/^\s/.test(line) ? 16 : 0}px;margin:4px 0">${html}</div>`);
+      continue;
+    }
     if (/^https?:\/\/\S+$/.test(line.trim())) { out.push(`<div><a href="${escHtml(line.trim())}" style="color:#2E5E8C">${escHtml(line.trim())}</a></div>`); continue; }
     const heading = !/^[\s-]/.test(line) && (line.endsWith(':') || DAY_HEAD.test(line));
     if (heading) {

@@ -64,6 +64,8 @@ export interface Store extends SyncStore {
   deleteEvent(id: string): Promise<Ev | null>;
   insertIdea(row: Omit<Idea, 'id'>): Promise<Idea>;
   insertTask(row: TaskRow): Promise<Task>;
+  /** A like or dislike for the weekly "Around town" picks. */
+  insertTaste(row: { title: string; kind: string; place: string; vote: 1 | -1; how: string; by_email: string }): Promise<void>;
   updateTask(id: string, patch: TaskPatch): Promise<Task | null>;
   putToken(action: 'update' | 'delete', args: Record<string, unknown>, summary: string, by: string): Promise<string>;
   redeemToken(token: string): Promise<{ action: 'update' | 'delete'; args: Record<string, unknown> } | null>;
@@ -123,6 +125,9 @@ export class RestStore implements Store {
   }
   async insertIdea(row: Omit<Idea, 'id'>) {
     return normIdea((await this.db.insert('ideas', { ...row, date: row.date || null, time: row.time || null }))[0]);
+  }
+  async insertTaste(row: { title: string; kind: string; place: string; vote: 1 | -1; how: string; by_email: string }) {
+    await this.db.req('POST', 'event_taste', row, 'return=minimal');
   }
   async insertTask(row: TaskRow) { return normTask((await this.db.insert('tasks', row))[0]); }
   async updateTask(id: string, patch: TaskPatch) {
