@@ -99,9 +99,13 @@ truth and overwrites changes made there.
    `MAIL_FROM_NAME` (defaults to "Household Manager").
 4. In the app: **Household → Email me this week's summary** to test.
 
-Texts go to `number@carrier` addresses through the same email service. Yours are already in
-`setup-household.sql`. If a message from a Gmail sender lands in spam, mark it "not spam" once; for the most
-reliable delivery later, use an address on your own domain.
+**Phone notifications** replace texts: on each phone, open the Home Screen app → **Household → Turn on
+notifications**. Nothing to set up here; they arrive at the same times as the emails. (iPhones need iOS 16.4
+or later, and the app must be opened from the Home Screen, not Safari.)
+
+Texts through carrier email addresses (`number@vzwpix.com`) still work for now, but Verizon is shutting that
+down by March 2027 and other carriers already have. They are off unless `sms` → `enabled` is true in the
+settings table.
 
 ## 8. Forwarded emails into the Inbox
 
@@ -146,7 +150,8 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
   "when did Mia last see the orthodontist?" Tap the microphone to talk. Deleting and changing existing
   events always waits for you to tap **Yes, do it**.
 - **Inbox:** paste an email or calendar file, or snap a flyer. Nothing reaches the calendar until you approve it.
-- **Household:** people, who gets emails, reminder times, theme, "check the school calendar now".
+- **Household:** people, who gets emails, reminder times, theme, notifications on this phone, "check the school calendar now".
+- Which messages also come as notifications: `push` in the settings table (`weekly`, `reminders`, `digest`).
 - Feeds, documents and text recipients are edited in Supabase → **Table Editor → settings**.
 - A shared calendar you trust (for example a co-parenting calendar) can sync straight onto the
   calendar instead of going to the Inbox: give its feed `"mode": "sync"`. See the notes at the top of

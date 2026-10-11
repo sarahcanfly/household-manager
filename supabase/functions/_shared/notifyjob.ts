@@ -6,13 +6,23 @@ import { addDays, zoned } from './domain.ts';
 import { digestText, tomorrowText, trimSms, weeklyText } from './notify.ts';
 import { smsAddress, type Mailer } from './mail.ts';
 import type { Store } from './store.ts';
+import type { PushMessage } from './webpush.ts';
 
 export interface NotifyDeps {
   store: Store;
   mail: Mailer;
   claim(kind: string, period: string): Promise<boolean>;   // true only the first time for that kind and period
   appUrl: string;
+  /** Sends a notification to every phone that turned them on. */
+  push?: (m: PushMessage) => Promise<unknown>;
   now?: Date;
+}
+
+/** The notification is the short text version, under the email's subject. */
+export function pushFrom(kind: string, msg: { subject: string; sms: string }, appUrl: string): PushMessage {
+  const lines = msg.sms.split('\n');
+  if (lines.length > 1 && lines[0].endsWith(':')) lines.shift();
+  return { title: msg.subject, body: lines.join('\n'), url: appUrl, tag: kind };
 }
 
 export async function runNotify(d: NotifyDeps, force?: 'weekly' | 'reminder' | 'digest'): Promise<string[]> {
@@ -24,6 +34,11 @@ export async function runNotify(d: NotifyDeps, force?: 'weekly' | 'reminder' | '
 
   const deliver = async (kind: 'weekly' | 'reminder' | 'digest', msg: { subject: string; body: string; sms: string } | null, smsOn: boolean) => {
     if (!msg) return;
+    const pushOn = { weekly: s.push?.weekly, reminder: s.push?.reminders, digest: s.push?.digest }[kind] ?? true;
+    if (d.push && pushOn !== false) {
+      try { await d.push(pushFrom(kind, msg, d.appUrl)); }
+      catch (e) { await d.store.log('scheduled', 'push error', (e as Error).message); }
+    }
     if (recipients.length) await d.mail(recipients, msg.subject, msg.body);
     if (s.sms?.enabled && smsOn) {
       for (const r of s.sms.recipients ?? []) {

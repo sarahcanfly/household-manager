@@ -1,6 +1,6 @@
 // Keeps the app shell available offline and loading instantly. Data always comes
 // fresh from the network; only the app's own files are cached.
-const CACHE = 'household-v6';
+const CACHE = 'household-v7';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'backend.js', 'demo.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -21,4 +21,23 @@ self.addEventListener('fetch', (e) => {
     caches.open(CACHE).then((c) => c.put(e.request, copy));
     return res;
   }).catch(() => caches.match(e.request).then((hit) => hit || caches.match('index.html'))));
+});
+
+// Reminders from the server. The payload is { title, body, url, tag }.
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Household', {
+    body: d.body || '', tag: d.tag || undefined, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url: d.url || './' },
+  }));
+});
+
+// Tapping a notification opens the app (or brings it forward if it is already open).
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    for (const c of list) if ('focus' in c) return c.focus();
+    return self.clients.openWindow(url);
+  }));
 });

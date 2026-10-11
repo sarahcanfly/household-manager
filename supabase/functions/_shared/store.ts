@@ -16,6 +16,7 @@ export interface Settings {
   digest: { enabled: boolean; hour: number };
   notify: string[];
   sms: { enabled: boolean; weekly: boolean; reminders: boolean; digest: boolean; max_chars: number; recipients: SmsRecipient[] };
+  push: { weekly: boolean; reminders: boolean; digest: boolean };
   feeds: Feed[];
   docs: DocSource[];
   ics_rules: FeedRules;
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   digest: { enabled: true, hour: 19 },
   notify: [],
   sms: { enabled: false, weekly: true, reminders: true, digest: false, max_chars: 600, recipients: [] },
+  push: { weekly: true, reminders: true, digest: true },
   feeds: [], docs: [], ics_rules: { rename: [], tag: [] }, max_recurrence_weeks: 4,
 };
 

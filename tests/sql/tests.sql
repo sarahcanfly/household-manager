@@ -151,6 +151,36 @@ end $$;
 select pg_temp.check((select count(*) from public.my_agent_pending()) = 0, 'stranger sees no staged changes');
 reset role;
 
+-- 5c. Phone notifications
+select pg_temp.check((select value->>'reminders' from public.settings where key = 'push') = 'true', 'push setting defaults on');
+select pg_temp.as_user('Jordan@x.com');
+select pg_temp.check(public.push_public_key() is null, 'no signing key until the server makes one');
+select public.save_push_subscription('https://web.push.apple.com/abc', 'p1', 'a1', 'iPhone');
+select public.save_push_subscription('https://web.push.apple.com/abc', 'p2', 'a2', 'iPhone');
+select pg_temp.check((select count(*) from public.push_subscriptions) = 0, 'subscriptions hidden from the app');
+do $$ begin
+  perform public.save_push_subscription('http://evil.example/x', 'p', 'a', '');
+  raise exception 'FAIL: accepted a non-https endpoint';
+exception when raise_exception then raise notice 'ok - non-https endpoint refused';
+end $$;
+reset role;
+select pg_temp.check((select count(*) from public.push_subscriptions) = 1 and (select p256dh from public.push_subscriptions) = 'p2' and (select email from public.push_subscriptions) = 'jordan@x.com', 'resubscribing replaces, email lowercased');
+insert into public.push_keys (public_key, private_jwk) values ('PUB', '{}');
+select pg_temp.as_user('jordan@x.com');
+select pg_temp.check(public.push_public_key() = 'PUB', 'household can read the public key');
+select pg_temp.check((select count(*) from public.push_keys) = 0, 'private key hidden from the app');
+select public.remove_push_subscription('https://web.push.apple.com/abc');
+reset role;
+select pg_temp.check((select count(*) from public.push_subscriptions) = 0, 'turning off removes it');
+select pg_temp.as_user('stranger@x.com');
+select pg_temp.check(public.push_public_key() is null, 'stranger gets no key');
+do $$ begin
+  perform public.save_push_subscription('https://web.push.apple.com/zzz', 'p', 'a', '');
+  raise exception 'FAIL: stranger subscribed';
+exception when insufficient_privilege then raise notice 'ok - stranger cannot subscribe';
+end $$;
+reset role;
+
 -- 6. Removing someone from allowed_users locks them out immediately
 delete from public.allowed_users where email = 'jordan@x.com';
 select pg_temp.as_user('jordan@x.com');

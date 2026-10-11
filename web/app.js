@@ -26,6 +26,7 @@ let intakeMode = 'text', intakeText = '', fileData = '', fileType = '', filePrev
 let parsing = false, parseNote = '', edits = {}, picked = {};
 let askText = '', askLog = [], askBusy = false, waiting = [], listening = false, recognizer = null;
 let siri = null;   // { has: bool, key?: string } while the Household sheet is open
+let pushState = '';   // '', 'unsupported', 'install', 'blocked', 'off', 'on' (this phone)
 let gate = null, gateErr = '', offline = !navigator.onLine;
 let theme = readTheme();
 
@@ -600,6 +601,7 @@ function householdHtml() {
     + '<div class="subhead">Look</div><p class="note">Just for this phone.</p><div class="chips">'
     + THEMES.map((t) => `<button class="chip" data-act="theme" data-t="${t.id}" aria-pressed="${theme === t.id}">${esc(t.name)} <span style="opacity:.7">${esc(t.hint)}</span></button>`).join('')
     + '</div>'
+    + pushHtml()
     + siriHtml()
     + '<div class="subhead">Tools</div><div class="row">'
     + `<button class="btn" data-act="check-feeds"${busy ? ' disabled' : ''}>Check the school calendar now</button>`
@@ -608,6 +610,26 @@ function householdHtml() {
     + '<button class="btn" data-act="signout">Sign out</button>'
     + '<button class="ghost" data-act="close">Close</button>';
   return h;
+}
+
+function pushHtml() {
+  if (!pushState) return '';
+  const h = '<div class="subhead">Notifications on this phone</div>';
+  const dis = busy ? ' disabled' : '';
+  switch (pushState) {
+    case 'install':
+      return h + '<p class="note">On iPhone, notifications only work from the Home Screen app. In Safari tap Share, then <b>Add to Home Screen</b>, open Household from there and come back here.</p>';
+    case 'unsupported':
+      return h + '<p class="note">This browser cannot show notifications from the app. Emails still arrive as usual.</p>';
+    case 'blocked':
+      return h + '<p class="note">Notifications are blocked for Household. Turn them on in the phone\'s <b>Settings → Notifications → Household</b>, then come back here.</p>';
+    case 'on':
+      return h + '<p class="note">On. The evening reminder, the weekly summary and the "things are waiting" note show up here, at the times above.</p>'
+        + `<div class="row"><button class="btn" data-act="push-test"${dis}>Send a test</button><button class="btn del" data-act="push-off"${dis}>Turn off</button></div>`;
+    default:
+      return h + '<p class="note">Get the evening reminder and weekly summary as notifications, like texts but from the app.</p>'
+        + `<div class="row"><button class="btn go" data-act="push-on"${dis}>Turn on notifications</button></div>`;
+  }
 }
 
 function siriHtml() {
@@ -654,6 +676,59 @@ function sheetHtml() {
 
 const newDraft = () => ({ title: '', date: todayStr(), time: '', where: '', cost: '', link: '', note: '', for: [], driver: '', withUs: [] });
 
+/* ---------- phone notifications ---------- */
+
+const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isInstalled = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const keyBytes = (b64) => { const s = atob(b64.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64.length + 3) % 4)); return Uint8Array.from(s, (c) => c.charCodeAt(0)); };
+const deviceName = () => (isIos() ? (/iPad/.test(navigator.userAgent) ? 'iPad' : 'iPhone') : /Android/.test(navigator.userAgent) ? 'Android' : 'Browser');
+
+async function swReady() {
+  if (!('serviceWorker' in navigator)) return null;
+  return Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(() => r(null), 4000))]);
+}
+
+async function readPushState() {
+  if (!api.pushKey) return 'unsupported';
+  const capable = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  if (isIos() && !isInstalled()) return 'install';
+  if (!capable) return 'unsupported';
+  if (Notification.permission === 'denied') return 'blocked';
+  const reg = await swReady();
+  if (!reg) return 'unsupported';
+  const sub = await reg.pushManager.getSubscription();
+  if (sub && Notification.permission === 'granted') {
+    const j = sub.toJSON();
+    api.savePush(j.endpoint, j.keys.p256dh, j.keys.auth, deviceName()).catch(() => {});   // keep the server's copy current
+    return 'on';
+  }
+  return 'off';
+}
+
+async function turnOnPush() {
+  // Ask first, straight from the tap: iPhones only show the prompt for a direct tap.
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') { pushState = perm === 'denied' ? 'blocked' : 'off'; return; }
+  const reg = await swReady();
+  if (!reg) throw new Error('The app is still installing. Close it, open it again and try once more.');
+  const { publicKey } = await api.pushKey();
+  const opts = { userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) };
+  let sub;
+  try { sub = await reg.pushManager.subscribe(opts); }
+  catch (_) { const old = await reg.pushManager.getSubscription(); if (old) await old.unsubscribe(); sub = await reg.pushManager.subscribe(opts); }
+  const j = sub.toJSON();
+  await api.savePush(j.endpoint, j.keys.p256dh, j.keys.auth, deviceName());
+  pushState = 'on';
+  try { await api.testPush(); } catch (_) { /* the switch is on either way */ }
+}
+
+async function turnOffPush() {
+  const reg = await swReady();
+  const sub = reg && await reg.pushManager.getSubscription();
+  if (sub) { const endpoint = sub.endpoint; await sub.unsubscribe(); await api.removePush(endpoint); }
+  pushState = 'off';
+}
+
 async function openHousehold() {
   memberDraft = roster().map((m) => ({ id: m.id, name: m.name, kind: m.kind }));
   settingsDraft = null;
@@ -667,6 +742,7 @@ async function openHousehold() {
       'reminder-hour': settings.reminders?.hour ?? 18, 'digest-hour': settings.digest?.hour ?? 19,
     };
     if (api.hasSiriKey) siri = { has: await api.hasSiriKey() };
+    try { pushState = await readPushState(); } catch (_) { pushState = 'unsupported'; }
     if (sheet && sheet.mode === 'household') render();
   } catch (err) { errMsg = err.message; render(); }
 }
@@ -792,7 +868,19 @@ root.addEventListener('click', async (ev) => {
       if (i > -1) draft.withUs.splice(i, 1); else draft.withUs.push(id);
       render(); break;
     }
-    case 'close': case 'scrim': sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; render(); break;
+    case 'close': case 'scrim': sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; render(); break;
+    case 'push-on':
+      busy = true; render();
+      try { await turnOnPush(); if (pushState === 'on') info = 'Notifications are on. A test is on its way.'; } catch (err) { errMsg = err.message; }
+      busy = false; render(); break;
+    case 'push-off':
+      busy = true; render();
+      try { await turnOffPush(); info = 'Notifications turned off on this phone.'; } catch (err) { errMsg = err.message; }
+      busy = false; render(); break;
+    case 'push-test':
+      busy = true; render();
+      try { const r = await api.testPush(); info = r && r.sent ? 'Test sent. It should appear in a few seconds.' : 'Nothing was sent. Turn notifications off and on again.'; } catch (err) { errMsg = err.message; }
+      busy = false; render(); break;
     case 'siri-make':
       if (siri && siri.has && !confirm('Make a new key? The old one stops working, so the Shortcut will need the new one.')) return;
       busy = true; render();

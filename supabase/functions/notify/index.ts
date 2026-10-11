@@ -8,6 +8,7 @@ import { serviceDb } from '../_shared/db.ts';
 import { RestStore } from '../_shared/store.ts';
 import { sendMail } from '../_shared/mail.ts';
 import { runNotify } from '../_shared/notifyjob.ts';
+import { pushToHousehold } from '../_shared/pushdb.ts';
 
 Deno.serve(handler(async (req) => {
   const actor = await requireCronOrUser(req);
@@ -17,6 +18,8 @@ Deno.serve(handler(async (req) => {
   const store = new RestStore(db);
   const sent = await runNotify({
     store, mail: sendMail, appUrl: env('APP_URL'),
+    // A test from the app goes only to the person who asked for it.
+    push: (m) => pushToHousehold(db, m, force ? actor : undefined),
     claim: async (kind, period) => (await db.req<unknown[]>('POST', 'notify_sent', { kind, period }, 'resolution=ignore-duplicates,return=representation')).length > 0,
   }, force);
   return json({ ok: true, sent });
