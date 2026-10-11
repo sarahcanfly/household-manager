@@ -24,7 +24,8 @@ let undo = null, busy = false, errMsg = '', info = '', settings = null;
 let draft = null, memberDraft = null, setupDraft = null, settingsDraft = null;
 let intakeMode = 'text', intakeText = '', fileData = '', fileType = '', filePreview = '', fileName = '';
 let parsing = false, parseNote = '', edits = {}, picked = {};
-let askText = '', askLog = [], askBusy = false, askPending = null, listening = false, recognizer = null;
+let askText = '', askLog = [], askBusy = false, waiting = [], listening = false, recognizer = null;
+let siri = null;   // { has: bool, key?: string } while the Household sheet is open
 let gate = null, gateErr = '', offline = !navigator.onLine;
 let theme = readTheme();
 
@@ -88,6 +89,7 @@ const needsDriver = (e) => !!e.time && !e.driver && hasKid(e.for || []) && e.dat
 async function reload() {
   state = await api.load();
   errMsg = '';
+  await refreshWaiting();
 }
 
 async function load() {
@@ -139,7 +141,7 @@ function render() {
     + tab('week', 'Week') + tab('month', 'Month')
     + tab('shelf', `Shelf<span class="count">${state.ideas.length}</span>`)
     + tab('inbox', `Inbox${state.pending.length ? `<span class="count">${state.pending.length}</span>` : ''}`)
-    + tab('ask', 'Ask')
+    + tab('ask', `Ask${waiting.length ? `<span class="count">${waiting.length}</span>` : ''}`)
     + '</div>'
     + (view === 'week' ? weekHtml() : view === 'month' ? monthHtml() : view === 'shelf' ? shelfHtml() : view === 'ask' ? askHtml() : inboxHtml())
     + bulkBarHtml()
@@ -436,11 +438,11 @@ function askHtml() {
   }
   askLog.forEach((m) => { h += `<div class="bubble ${m.role === 'user' ? 'me' : 'them'}">${esc(m.text)}</div>`; });
   if (askBusy) h += '<p class="thinking">Working on it…</p>';
-  if (askPending) {
-    h += `<div class="confirm"><div class="cardtitle">${esc(askPending.summary)}</div>`
-      + `<div class="row"><button class="btn go" data-act="ask-confirm"${askBusy ? ' disabled' : ''}>Yes, do it</button>`
-      + `<button class="btn" data-act="ask-cancel"${askBusy ? ' disabled' : ''}>Cancel</button></div></div>`;
-  }
+  waiting.forEach((w) => {
+    h += `<div class="confirm"><div class="cardtitle">${esc(w.summary)}</div>`
+      + `<div class="row"><button class="btn go" data-act="ask-confirm" data-token="${esc(w.token)}"${askBusy ? ' disabled' : ''}>Yes, do it</button>`
+      + `<button class="btn" data-act="ask-cancel" data-token="${esc(w.token)}"${askBusy ? ' disabled' : ''}>Cancel</button></div></div>`;
+  });
   h += '</div><div class="askbar">'
     + `<textarea id="askin" placeholder="What should I do?" aria-label="Message">${esc(askText)}</textarea>`
     + (SpeechRec ? `<button class="mic" data-act="mic" aria-pressed="${listening}" aria-label="${listening ? 'Stop listening' : 'Speak'}">${MIC}</button>` : '')
@@ -461,27 +463,36 @@ async function runAsk() {
   // Clear the box for good: put the keyboard away (ends phone dictation) and empty it.
   const box = document.getElementById('askin');
   if (box) { box.value = ''; box.blur(); }
-  askText = ''; askBusy = true; askPending = null; errMsg = ''; render();
+  askText = ''; askBusy = true; errMsg = ''; render();
   try {
     const r = await api.ask(msg, history);
     askLog.push({ role: 'assistant', text: r.reply || 'Done.' });
-    askPending = r.pending || null;
+    if (r.pending && !waiting.some((w) => w.token === r.pending.token)) waiting.push(r.pending);
     if (r.changed) await reload();
   } catch (err) { errMsg = err.message; }
   askBusy = false; render();
 }
 
-async function runConfirm() {
-  if (!askPending || askBusy) return;
-  const token = askPending.token;
+async function runConfirm(token, cancel) {
+  if (!token || askBusy) return;
   askBusy = true; errMsg = ''; render();
   try {
-    const r = await api.confirm(token);
-    askPending = null;
+    const r = cancel ? await api.cancelConfirm(token) : await api.confirm(token);
+    waiting = waiting.filter((w) => w.token !== token);
     askLog.push({ role: 'assistant', text: r.reply || 'Done.' });
     if (r.changed) await reload();
   } catch (err) { errMsg = err.message; }
   askBusy = false; render();
+}
+
+/** Changes staged from Siri (or another phone) that are waiting for this person's tap. */
+async function refreshWaiting() {
+  if (!api || !api.myPendingConfirmations) return;
+  try {
+    const server = await api.myPendingConfirmations();
+    const known = new Set(server.map((w) => w.token));
+    waiting = [...waiting.filter((w) => known.has(w.token)), ...server.filter((w) => !waiting.some((x) => x.token === w.token))];
+  } catch (_) { /* not critical */ }
 }
 
 function toggleMic() {
@@ -589,6 +600,7 @@ function householdHtml() {
     + '<div class="subhead">Look</div><p class="note">Just for this phone.</p><div class="chips">'
     + THEMES.map((t) => `<button class="chip" data-act="theme" data-t="${t.id}" aria-pressed="${theme === t.id}">${esc(t.name)} <span style="opacity:.7">${esc(t.hint)}</span></button>`).join('')
     + '</div>'
+    + siriHtml()
     + '<div class="subhead">Tools</div><div class="row">'
     + `<button class="btn" data-act="check-feeds"${busy ? ' disabled' : ''}>Check the school calendar now</button>`
     + `<button class="btn" data-act="test-weekly"${busy ? ' disabled' : ''}>Email me this week's summary</button></div>`
@@ -596,6 +608,21 @@ function householdHtml() {
     + '<button class="btn" data-act="signout">Sign out</button>'
     + '<button class="ghost" data-act="close">Close</button>';
   return h;
+}
+
+function siriHtml() {
+  if (!siri) return '';
+  let h = '<div class="subhead">Ask Household from Siri</div>';
+  if (siri.key) {
+    return h + '<p class="note">Your Siri key. Copy it into the Shortcut now: it will not be shown again. Treat it like a password.</p>'
+      + `<div class="field"><label for="siri-key">Key</label><input type="text" id="siri-key" readonly value="${esc(siri.key)}"></div>`
+      + `<div class="field"><label for="siri-url">Address</label><input type="text" id="siri-url" readonly value="${esc(api.agentUrl || '')}"></div>`
+      + '<div class="row"><button class="btn go" data-act="copy" data-from="siri-key">Copy key</button><button class="btn" data-act="copy" data-from="siri-url">Copy address</button></div>'
+      + '<p class="note">Then follow "Ask Household with Siri" in SETUP.md to build the Shortcut.</p>';
+  }
+  return h + `<p class="note">${siri.has ? 'Your Siri key is on.' : 'Lets an iPhone Shortcut send requests to the agent, so you can say "Hey Siri, Ask Household".'}</p>`
+    + `<div class="row"><button class="btn${siri.has ? '' : ' go'}" data-act="siri-make"${busy ? ' disabled' : ''}>${siri.has ? 'Make a new key' : 'Make my Siri key'}</button>`
+    + (siri.has ? `<button class="btn del" data-act="siri-off"${busy ? ' disabled' : ''}>Turn off</button>` : '') + '</div>';
 }
 
 function sheetHtml() {
@@ -639,6 +666,7 @@ async function openHousehold() {
       'weekly-day': settings.weekly?.day || 'MONDAY', 'weekly-hour': settings.weekly?.hour ?? 7,
       'reminder-hour': settings.reminders?.hour ?? 18, 'digest-hour': settings.digest?.hour ?? 19,
     };
+    if (api.hasSiriKey) siri = { has: await api.hasSiriKey() };
     if (sheet && sheet.mode === 'household') render();
   } catch (err) { errMsg = err.message; render(); }
 }
@@ -738,7 +766,9 @@ root.addEventListener('click', async (ev) => {
       view = t.dataset.v; schedulingId = null;
       if (view !== 'inbox') picked = {};
       if (view !== 'ask') stopListening();
-      render(); break;
+      render();
+      if (view === 'ask') { await refreshWaiting(); render(); }
+      break;
     case 'week': weekOffset = +t.dataset.d === 0 ? 0 : weekOffset + +t.dataset.d; render(); break;
     case 'month': monthOffset = +t.dataset.d === 0 ? 0 : monthOffset + +t.dataset.d; render(); break;
     case 'refresh': await load(); break;
@@ -762,7 +792,22 @@ root.addEventListener('click', async (ev) => {
       if (i > -1) draft.withUs.splice(i, 1); else draft.withUs.push(id);
       render(); break;
     }
-    case 'close': case 'scrim': sheet = null; draft = null; memberDraft = null; settingsDraft = null; render(); break;
+    case 'close': case 'scrim': sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; render(); break;
+    case 'siri-make':
+      if (siri && siri.has && !confirm('Make a new key? The old one stops working, so the Shortcut will need the new one.')) return;
+      busy = true; render();
+      try { siri = { has: true, key: await api.createSiriKey() }; } catch (err) { errMsg = err.message; }
+      busy = false; render(); break;
+    case 'siri-off':
+      busy = true; render();
+      try { await api.revokeSiriKey(); siri = { has: false }; info = 'Siri key turned off.'; } catch (err) { errMsg = err.message; }
+      busy = false; render(); break;
+    case 'copy': {
+      const el = document.getElementById(t.dataset.from);
+      if (!el) return;
+      try { await navigator.clipboard.writeText(el.value); info = 'Copied.'; } catch (_) { el.select(); info = 'Select and copy it.'; }
+      render(); break;
+    }
     case 'dismiss': errMsg = ''; info = ''; render(); break;
 
     case 'create': {
@@ -862,8 +907,8 @@ root.addEventListener('click', async (ev) => {
     case 'reject-all': await mutate(() => api.rejectAll(), () => { edits = {}; }); break;
 
     case 'ask-send': await runAsk(); break;
-    case 'ask-confirm': await runConfirm(); break;
-    case 'ask-cancel': askPending = null; askLog.push({ role: 'assistant', text: 'Okay, cancelled. Nothing was changed.' }); render(); break;
+    case 'ask-confirm': await runConfirm(t.dataset.token, false); break;
+    case 'ask-cancel': await runConfirm(t.dataset.token, true); break;
     case 'mic': toggleMic(); break;
 
     case 'undo': if (undo) { const fn = undo.fn; undo = null; await fn(); } break;

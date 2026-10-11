@@ -115,6 +115,29 @@ reliable delivery later, use an address on your own domain.
    address. Gmail sends a confirmation code; find it in Supabase → **Table Editor → log** (action
    "gmail forwarding confirmation"). Then create a filter for your `household` label → **Forward it to** that address.
 
+## 9. "Hey Siri, Ask Household" (optional)
+
+An iPhone Shortcut that sends what you say straight to the agent and reads the answer back. It also
+appears when you search on your phone.
+
+1. In the app: **Household → Ask Household from Siri → Make my Siri key.** Keep that screen open.
+2. Open the **Shortcuts** app → **+** (new shortcut). Tap the name at the top and call it `Ask Household`.
+3. Add these actions in order (use the search bar at the bottom to find each one):
+   1. **Ask for Input**: Input type *Text*, Prompt `What should I do?`
+   2. **Get Contents of URL**: tap the URL and paste the **Address** from the app. Tap the arrow to show more:
+      - Method: **POST**
+      - Headers: add one. Key `x-household-key`, Text: paste the **Key** from the app.
+      - Request Body: **JSON**. Add two fields:
+        - `action` (Text): `ask`
+        - `message` (Text): tap it and choose the **Provided Input** variable
+   3. **Get Dictionary Value**: Get *Value* for key `reply` in *Contents of URL*
+   4. **Show Result** (or **Speak Text**, if you'd rather hear it): *Dictionary Value*
+4. Tap **Done**. Try it: say "Hey Siri, Ask Household", then "add a dentist appointment for Ozzie on December 2 at 2pm".
+
+Deleting or changing an existing event still needs your tap: Siri tells you, and a **Yes, do it** card
+waits in the app's **Ask** tab (the tab shows a number) for 12 hours. Each person makes their own key on
+their own phone. **Make a new key** or **Turn off** in the app stops the old one immediately.
+
 ---
 
 ## Day to day

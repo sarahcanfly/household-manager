@@ -123,6 +123,34 @@ select pg_temp.check((select active from public.members where id = 'k1') = false
 select pg_temp.check((select count(*) from public.members where name = 'Ivy' and active and color = '#3B5A8A') = 1, 'new member gets palette colour by position');
 reset role;
 
+-- 5b. Siri keys and staged confirmations
+select pg_temp.as_user('jordan@x.com');
+select pg_temp.check(not public.has_shortcut_key(), 'no key yet');
+create temp table k1 as select public.create_shortcut_key() as k;
+select pg_temp.check((select k from k1) ~ '^hh_[0-9a-f]{64}$', 'key has the expected shape');
+select pg_temp.check(public.has_shortcut_key(), 'key now exists');
+create temp table k2 as select public.create_shortcut_key() as k;
+select pg_temp.check((select k from k1) <> (select k from k2), 'making a new key replaces the old one');
+select pg_temp.check((select count(*) from public.shortcut_keys) = 0, 'key table hidden from the app');
+reset role;
+select pg_temp.check((select count(*) from public.shortcut_keys) = 1, 'one key per person');
+select pg_temp.check((select key_hash from public.shortcut_keys) = encode(sha256(convert_to((select k from k2), 'UTF8')), 'hex'), 'only the hash is stored');
+insert into public.agent_pending (action, args, summary, created_by) values ('delete', '{"id":"e1"}', 'Delete Ortho?', 'jordan@x.com'), ('delete', '{"id":"e2"}', 'Not mine', 'alex@x.com');
+select pg_temp.check((select expires_at > now() + interval '11 hours' from public.agent_pending where summary = 'Delete Ortho?'), 'staged changes last half a day');
+select pg_temp.as_user('Jordan@x.com');
+select pg_temp.check((select count(*) from public.my_agent_pending()) = 1 and (select summary from public.my_agent_pending()) = 'Delete Ortho?', 'see only my own staged changes');
+select public.revoke_shortcut_key();
+select pg_temp.check(not public.has_shortcut_key(), 'key revoked');
+reset role;
+select pg_temp.as_user('stranger@x.com');
+do $$ begin
+  perform public.create_shortcut_key();
+  raise exception 'FAIL: stranger made a key';
+exception when insufficient_privilege then raise notice 'ok - stranger cannot make a key';
+end $$;
+select pg_temp.check((select count(*) from public.my_agent_pending()) = 0, 'stranger sees no staged changes');
+reset role;
+
 -- 6. Removing someone from allowed_users locks them out immediately
 delete from public.allowed_users where email = 'jordan@x.com';
 select pg_temp.as_user('jordan@x.com');

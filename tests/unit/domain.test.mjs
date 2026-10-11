@@ -81,3 +81,8 @@ test('secrets are trimmed of stray spaces and line breaks', async () => {
   assert.equal(env('HM_TEST_SECRET', 'fallback'), 'fallback');
   delete process.env.HM_TEST_SECRET;
 });
+
+test('Siri key hash matches what the database stores (sha256 hex)', async () => {
+  const { keyHash } = await import('../../.build/supabase/functions/_shared/auth.js');
+  assert.equal(await keyHash('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+});

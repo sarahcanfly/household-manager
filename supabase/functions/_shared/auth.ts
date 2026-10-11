@@ -5,7 +5,25 @@ import { env, must, safeEqual } from './env.ts';
 import { HttpError } from './http.ts';
 import { eq, serviceDb, serviceKey } from './db.ts';
 
+export async function keyHash(key: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** The "Ask Household" Shortcut sends a personal key instead of a sign-in. */
+async function userFromKey(key: string): Promise<string> {
+  if (!/^hh_[0-9a-f]{64}$/.test(key)) throw new HttpError(401, 'That Siri key is not valid. Make a new one in the app under Household.');
+  const db = serviceDb();
+  const rows = await db.select<{ email: string }>('shortcut_keys', `select=email&key_hash=${eq(await keyHash(key))}`);
+  const email = rows[0]?.email;
+  if (!email) throw new HttpError(401, 'That Siri key was turned off. Make a new one in the app under Household.');
+  if (!(await db.select('allowed_users', `select=email&email=${eq(email)}`)).length) throw new HttpError(403, 'Not allowed.');
+  return email;
+}
+
 export async function requireUser(req: Request): Promise<string> {
+  const key = (req.headers.get('x-household-key') ?? '').trim();
+  if (key) return await userFromKey(key);
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
   if (!token) throw new HttpError(401, 'Sign in first.');
   const res = await fetch(`${must('SUPABASE_URL')}/auth/v1/user`, {

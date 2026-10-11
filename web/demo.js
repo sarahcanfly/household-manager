@@ -84,6 +84,12 @@ export function createDemoBackend() {
       return wait({ reply: 'This is demo mode, so I only understand "add … for … at …" and "delete …". Once Supabase is connected, Claude answers anything about your calendar.', pending: null, changed: false });
     },
     confirm: () => wait({ reply: 'Demo mode: nothing was deleted.', changed: false }),
+    cancelConfirm: () => wait({ reply: 'Okay, cancelled. Nothing was changed.', changed: false }),
+    hasSiriKey: () => wait(false),
+    createSiriKey: () => wait('hh_' + 'demo'.repeat(16)),
+    revokeSiriKey: () => wait(),
+    myPendingConfirmations: () => wait([]),
+    agentUrl: 'https://your-project.supabase.co/functions/v1/agent',
     extractText: () => { db.pending.push({ id: uid(), title: 'Field trip forms due', date: day(4), time: '', for: ['k1'], where: '', note: 'Demo result', source: 'text', sourceRef: '', confidence: 'low' }); return wait({ found: 1, added: 1, past: 0, dupe: 0, parsed: false }); },
     extractFile: () => wait({ found: 0, added: 0, past: 0, dupe: 0, parsed: false }),
     checkFeeds: () => wait({ report: ['Demo mode: no feeds to check.'] }),

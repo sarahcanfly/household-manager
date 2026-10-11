@@ -19,6 +19,7 @@ Deno.serve(handler(async (req) => {
   };
   const agent = new Agent({ store, claude: callClaude, actor, notify });
   if (b.action === 'confirm') return json(await agent.confirm(String(b.token ?? '')));
+  if (b.action === 'cancel') { await store.redeemToken(String(b.token ?? '')); return json({ reply: 'Okay, cancelled. Nothing was changed.', changed: false }); }
   if (b.action === 'ask') return json(await agent.ask(String(b.message ?? ''), b.history));
   throw new HttpError(400, 'Unknown request.');
 }));

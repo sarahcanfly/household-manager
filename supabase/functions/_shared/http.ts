@@ -7,7 +7,7 @@ export class HttpError extends Error {
 export function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': env('APP_ORIGIN', '*'),
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret, x-household-key',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Vary': 'Origin',
   };
