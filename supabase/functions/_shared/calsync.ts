@@ -100,19 +100,27 @@ export interface SyncDeps {
   log(action: string, detail: string): Promise<void>;
 }
 
-export interface SyncResult { created: number; updated: number; recreated: number; deleted: number; deferred: number; errors: number }
+export interface SyncResult { created: number; updated: number; recreated: number; deleted: number; deferred: number; errors: number; stopped?: string }
 
 export async function runSync(d: SyncDeps): Promise<SyncResult> {
   const desired = await desiredEvents(d.world, d.today);
   const map = new Map(d.map.map((r) => [r.event_id, r]));
   const known = new Set(d.world.events.map((e) => e.id));
   const r: SyncResult = { created: 0, updated: 0, recreated: 0, deleted: 0, deferred: 0, errors: 0 };
-  let ops = 0;
+  let ops = 0, streak = 0, stopped = '';
+  // When Google refuses everything (calendar not shared, API off, wrong id), stop after a
+  // few tries and say why once, instead of failing and logging every single event.
+  const failed = async (id: string, e: unknown) => {
+    r.errors++; streak++;
+    const msg = (e as Error).message;
+    if (r.errors <= 3) await d.log('calendarSync error', `${id}: ${msg}`);
+    if (streak >= 3 && !r.created && !r.updated && !r.deleted) stopped = msg;
+  };
 
   for (const want of desired) {
     const m = map.get(want.id);
     if (m && m.hash === want.hash) continue;
-    if (ops >= MAX_OPS) { r.deferred++; continue; }
+    if (ops >= MAX_OPS || stopped) { r.deferred++; continue; }
     ops++;
     try {
       const body = gcalBody(want, d.tz);
@@ -120,35 +128,33 @@ export async function runSync(d: SyncDeps): Promise<SyncResult> {
       if (m && alive && m.all_day === want.allDay) {
         await d.update(m.cal_event_id, body);
         await d.saveMap({ event_id: want.id, cal_event_id: m.cal_event_id, hash: want.hash, all_day: want.allDay });
-        r.updated++;
+        r.updated++; streak = 0;
         continue;
       }
       if (m && alive) { await d.remove(m.cal_event_id); r.recreated++; }       // all-day <-> timed: start fresh
       const calId = await d.create(body);
       await d.saveMap({ event_id: want.id, cal_event_id: calId, hash: want.hash, all_day: want.allDay });
       if (!(m && alive)) r.created++;
+      streak = 0;
     } catch (e) {
-      r.errors++;
-      await d.log('calendarSync error', `${want.id}: ${(e as Error).message}`);
+      await failed(want.id, e);
     }
   }
 
   // Rows gone from the database. Events that merely aged out of the window stay on the calendar.
   for (const [eventId, m] of map) {
     if (known.has(eventId)) continue;
-    if (ops >= MAX_OPS) { r.deferred++; continue; }
+    if (ops >= MAX_OPS || stopped) { r.deferred++; continue; }
     ops++;
     try {
       if (await d.exists(m.cal_event_id)) await d.remove(m.cal_event_id);
       await d.dropMap(eventId);
-      r.deleted++;
+      r.deleted++; streak = 0;
     } catch (e) {
-      r.errors++;
-      await d.log('calendarSync error', `${eventId}: ${(e as Error).message}`);
+      await failed(eventId, e);
     }
   }
-  if (r.created || r.updated || r.recreated || r.deleted || r.deferred || r.errors) {
-    await d.log('calendarSync', JSON.stringify(r));
-  }
-  return r;
+  if (stopped) await d.log('calendarSync stopped', `Google refused every change, so this run stopped early. Reason: ${stopped}`);
+  else if (r.created || r.updated || r.recreated || r.deleted || r.deferred || r.errors) await d.log('calendarSync', JSON.stringify(r));
+  return { ...r, ...(stopped ? { stopped } : {}) };
 }

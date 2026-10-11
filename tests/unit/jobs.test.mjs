@@ -99,6 +99,19 @@ test('calendar sync: a failing event is logged and the rest continue', async () 
   assert.ok(logs.some(([a, dt]) => a === 'calendarSync error' && /quota/.test(dt)));
 });
 
+test('calendar sync: stops early and logs once when Google refuses everything', async () => {
+  const events = Array.from({ length: 30 }, (_, i) => ev({ id: 'x' + i, date: plus(2 + i) }));
+  const world = { members: members(), pending: [], ideas: [], events };
+  const g = fakeCalendar(); let calls = 0;
+  g.create = async () => { calls++; throw new Error('Calendar create failed (404): Not Found'); };
+  const { r, logs } = await sync(world, g, new Map());
+  assert.equal(calls, 3, 'gives up after three straight failures');
+  assert.equal(r.deferred, 27);
+  assert.match(r.stopped, /404/);
+  assert.equal(logs.filter(([a]) => a === 'calendarSync error').length, 3);
+  assert.ok(logs.some(([a, dt]) => a === 'calendarSync stopped' && /404/.test(dt)));
+});
+
 test('addMinutes crosses midnight', () => {
   assert.deepEqual(cal.addMinutes('2026-12-31', '23:30', 60), { date: '2027-01-01', time: '00:30' });
 });
