@@ -1184,6 +1184,25 @@ window.addEventListener('offline', () => { offline = true; render(); });
 
 let unsubscribe = null;
 
+/* A link like ?add=1&title=…&date=…&time=…&where=…&note=… (from the weekly email) opens a filled-in Add form. */
+let incoming = null;
+function readIncoming() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('add') !== '1') return;
+  const clip = (k, n) => (q.get(k) || '').slice(0, n);
+  incoming = { title: clip('title', 200), date: /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '') ? q.get('date') : '',
+    time: /^\d{2}:\d{2}$/.test(q.get('time') || '') ? q.get('time') : '', where: clip('where', 300), note: clip('note', 1000) };
+  const keep = new URLSearchParams(); if (q.has('demo')) keep.set('demo', '');
+  history.replaceState(null, '', location.pathname + (keep.toString() ? '?' + keep.toString().replace(/=$/, '') : ''));
+}
+function openIncoming() {
+  if (!incoming || !state) return;
+  draft = { ...newDraft(), ...incoming, date: incoming.date || todayStr() };
+  addKind = 'event'; sheet = { mode: 'add' }; incoming = null;
+  info = 'From the weekly email. Check the details, then add it (or switch to Shelf to keep it as a maybe).';
+  render();
+}
+
 async function enter() {
   try {
     me = await api.session();
@@ -1191,6 +1210,7 @@ async function enter() {
     if (!(await api.isAllowed())) { gate = 'denied'; render(); return; }
     gate = null;
     await load();
+    openIncoming();
     if (unsubscribe) unsubscribe();
     unsubscribe = api.onChange(() => { if (!busy && !sheet && !parsing) load(); });
   } catch (err) { gate = 'error'; gateErr = err.message; render(); }
@@ -1198,6 +1218,7 @@ async function enter() {
 
 async function boot() {
   applyTheme(theme);
+  readIncoming();
   const cfg = window.HM_CONFIG || {};
   const demo = new URLSearchParams(location.search).has('demo');
   try {

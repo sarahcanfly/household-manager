@@ -10,7 +10,7 @@ import { sendMail } from '../_shared/mail.ts';
 import { runNotify, type NotifyKind } from '../_shared/notifyjob.ts';
 import { pushToHousehold } from '../_shared/pushdb.ts';
 import { twilioReady, twilioTexter } from '../_shared/sms.ts';
-import { findLocalEvents, localLines } from '../_shared/localevents.ts';
+import { DEFAULT_LOCAL, findLocalEvents, localLines } from '../_shared/localevents.ts';
 import { callClaude } from '../_shared/claude.ts';
 
 Deno.serve(handler(async (req) => {
@@ -42,7 +42,7 @@ Deno.serve(handler(async (req) => {
       const s = await store.settings();
       if (!s.local_events?.enabled || !env('ANTHROPIC_API_KEY')) return [];
       const w = await store.world();
-      return localLines(await findLocalEvents(callClaude, { ...s.local_events, area: s.local_events.area || 'Framingham, MA' }, w.members, start, s.timezone));
+      return localLines(await findLocalEvents(callClaude, { ...DEFAULT_LOCAL, ...s.local_events, area: s.local_events.area || 'Framingham, MA' }, w.members, start, s.timezone), env('APP_URL'));
     },
     claim: async (kind, period) => (await db.req<unknown[]>('POST', 'notify_sent', { kind, period }, 'resolution=ignore-duplicates,return=representation')).length > 0,
   }, force);

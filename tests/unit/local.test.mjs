@@ -21,9 +21,9 @@ test('local events: only dated, linked, in-week items, de-duplicated and sorted'
   assert.deepEqual(out.map((e) => e.title), ['Library story time', 'Pumpkin festival']);
   assert.deepEqual(L.parseLocal('no json here', start), []);
   assert.deepEqual(L.localLines(out), [
-    'Around town this week (suggestions, not on the calendar):',
-    '- Tue Oct 13: Library story time — Ashland Farm, Ashland (Free)', '  All ages', '  https://lib.example/story',
-    '- Sat Oct 17 10am: Pumpkin festival — Ashland Farm, Ashland (Free)', '  All ages', '  https://example.org/pumpkins']);
+    'Around town this week:',
+    '- Tue Oct 13: Library story time — Ashland Farm, Ashland (Free)', '  All ages', '  Details: https://lib.example/story',
+    '- Sat Oct 17 10am: Pumpkin festival — Ashland Farm, Ashland (Free)', '  All ages', '  Details: https://example.org/pumpkins']);
 });
 
 test('local events: asks Claude with web search near the household, and continues a paused search', async () => {
@@ -47,8 +47,37 @@ test('weekly email gets the section; a failed search still sends the email', asy
   const mails = [];
   const base = { store, now, appUrl: '', claim: async () => true, mail: async (to, subject, text) => mails.push(text) };
   await runNotify({ ...base, around: async () => L.localLines([good()]) }, 'weekly');
-  assert.match(mails[0], /Around town this week[\s\S]*Pumpkin festival[\s\S]*https:\/\/example.org\/pumpkins/);
+  assert.match(mails[0], /Around town this week:[\s\S]*Pumpkin festival[\s\S]*Details: https:\/\/example.org\/pumpkins/);
   await runNotify({ ...base, around: async () => { throw new Error('web search is not enabled'); } }, 'weekly');
   assert.equal(mails.length, 2); assert.doesNotMatch(mails[1], /Around town/);
   assert.ok(store.logs.some((l) => l.action === 'local events error'));
+});
+
+test('live music gets its own section and its own limit; each suggestion links to a filled-in Add form', () => {
+  const list = L.parseLocal(JSON.stringify([
+    good(), good({ title: 'Band on the common', date: '2026-10-16', time: '19:00', kind: 'music', place: 'Framingham Common', cost: 'Free', why: 'Bring chairs', link: 'https://town.example/music' }),
+    good({ title: 'Jazz night', date: '2026-10-15', time: '20:00', kind: 'music' }), good({ title: 'Folk duo', date: '2026-10-14', kind: 'music' }),
+    good({ title: 'Too many', date: '2026-10-18', kind: 'music' })]), start, 6, 3);
+  assert.deepEqual(list.filter((e) => e.kind === 'music').map((e) => e.title), ['Folk duo', 'Jazz night', 'Band on the common']);
+  const lines = L.localLines(list, 'https://mikeysarah.netlify.app');
+  const i = lines.indexOf('Live music this week:');
+  assert.ok(i > 0 && lines[0] === 'Around town this week:' && lines[i - 1] === '');
+  const add = lines.find((l) => l.includes('Band on the common') === false && l.startsWith('  Add to calendar:') && l.includes('Band'));
+  const url = new URL(add.replace('  Add to calendar: ', ''));
+  assert.equal(url.origin, 'https://mikeysarah.netlify.app');
+  assert.deepEqual(Object.fromEntries(url.searchParams), { add: '1', title: 'Band on the common', date: '2026-10-16', time: '19:00', where: 'Framingham Common', note: 'Free · https://town.example/music' });
+  assert.match(L.localPrompt(L.DEFAULT_LOCAL, members(), start), /up to 3 live music shows/);
+  assert.doesNotMatch(L.localPrompt({ ...L.DEFAULT_LOCAL, music: false }, members(), start), /live music/);
+});
+
+test('emails go out with bold headings and real links', async () => {
+  const { textToHtml } = await import(B + 'mail.js');
+  const html = textToHtml(['Needs a decision:', '- NO DRIVER Tue 5pm: Soccer', '', 'Monday Oct 12 — Reid at Jenn\'s', '  5:30pm  Soccer <U10>',
+    'Around town this week:', '  Details: https://x.example/a?b=1&c=2', '  Add to calendar: https://app.example/?add=1', 'Open: https://app.example'].join('\n'));
+  assert.match(html, /<div style="font-weight:700;font-size:17px[^"]*">Needs a decision:<\/div>/);
+  assert.match(html, /<div style="font-weight:700;font-size:15px[^"]*">Monday Oct 12 — Reid at Jenn&#39;s|<div style="font-weight:700;font-size:15px[^"]*">Monday Oct 12 — Reid at Jenn's/);
+  assert.match(html, /Soccer &lt;U10&gt;/, 'text is escaped');
+  assert.match(html, /<a href="https:\/\/x.example\/a\?b=1&amp;c=2"[^>]*>Details<\/a>/);
+  assert.match(html, />Add to calendar<\/a>/);
+  assert.doesNotMatch(html, /font-weight:700[^>]*>- NO DRIVER/, 'list lines are not headings');
 });

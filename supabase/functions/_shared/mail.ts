@@ -6,6 +6,36 @@ import type { SmsRecipient } from './store.ts';
 
 export type Mailer = (to: string[], subject: string, text: string) => Promise<void>;
 
+const escHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const DAY_HEAD = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Today|Tomorrow)\b/;
+
+/**
+ * The plain-text email as simple HTML: section headings ("To do:") and day headings
+ * ("Monday Oct 12") in bold, "Label: https://…" lines as links, everything else as written.
+ */
+export function textToHtml(text: string): string {
+  const out: string[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) { out.push('<div style="height:10px"></div>'); continue; }
+    const link = line.match(/^(\s*)([A-Za-z][A-Za-z ]{1,30}): (https?:\/\/\S+)$/);
+    if (link) {
+      out.push(`<div style="padding-left:${link[1].length ? 16 : 0}px;margin:2px 0"><a href="${escHtml(link[3])}" style="color:#2E5E8C">${escHtml(link[2])}</a></div>`);
+      continue;
+    }
+    if (/^https?:\/\/\S+$/.test(line.trim())) { out.push(`<div><a href="${escHtml(line.trim())}" style="color:#2E5E8C">${escHtml(line.trim())}</a></div>`); continue; }
+    const heading = !/^[\s-]/.test(line) && (line.endsWith(':') || DAY_HEAD.test(line));
+    if (heading) {
+      const big = line.endsWith(':');
+      out.push(`<div style="font-weight:700;font-size:${big ? 17 : 15}px;margin:${big ? 18 : 12}px 0 4px">${escHtml(line)}</div>`);
+      continue;
+    }
+    const indent = (line.match(/^\s*/)?.[0].length ?? 0);
+    out.push(`<div style="padding-left:${Math.min(indent, 4) * 4}px;margin:2px 0">${escHtml(line.trim())}</div>`);
+  }
+  return `<div style="font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.45;color:#1F2421;max-width:620px">${out.join('')}</div>`;
+}
+
 export const sendMail: Mailer = async (to, subject, text) => {
   const list = [...new Set(to.map((t) => t.trim()).filter(Boolean))];
   if (!list.length) return;
@@ -14,7 +44,7 @@ export const sendMail: Mailer = async (to, subject, text) => {
     const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: { 'api-key': must('BREVO_API_KEY'), 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ sender: { email: must('MAIL_FROM'), name: fromName }, to: list.map((email) => ({ email })), subject, textContent: text }),
+      body: JSON.stringify({ sender: { email: must('MAIL_FROM'), name: fromName }, to: list.map((email) => ({ email })), subject, textContent: text, htmlContent: textToHtml(text) }),
     });
     if (!res.ok) throw new Error(`Email failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
     return;
@@ -23,7 +53,7 @@ export const sendMail: Mailer = async (to, subject, text) => {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${must('RESEND_API_KEY')}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ from: `${fromName} <${must('MAIL_FROM')}>`, to: list, subject, text }),
+      body: JSON.stringify({ from: `${fromName} <${must('MAIL_FROM')}>`, to: list, subject, text, html: textToHtml(text) }),
     });
     if (!res.ok) throw new Error(`Email failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
     return;

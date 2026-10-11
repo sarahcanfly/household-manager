@@ -51,7 +51,7 @@ export function weeklyText(w: World, start: string, appUrl: string, around: stri
     lines.push(...(evs.length ? evs.map((e) => eventLine(e, w)) : ['  nothing scheduled']));
   }
   if (around.length) lines.push('', ...around);
-  if (appUrl) lines.push('', `Open: ${appUrl}`);
+  if (appUrl) lines.push('', `Open Household: ${appUrl}`);
   const sms = [`Week of ${prettyDate(start)}:`, ...days.flatMap((d) =>
     onDay(w, d).map((e) => `${weekdayOf(d).slice(0, 3)} ${prettyTime(e.time)} ${e.title}`)),
   ...due.map((t) => `Due ${dueLabel(t.due, start)}: ${t.title}`),
@@ -69,7 +69,7 @@ export function tomorrowText(w: World, tomorrow: string, appUrl: string): Messag
   const lines = [`Tomorrow, ${weekdayOf(tomorrow)} ${prettyDate(tomorrow).slice(4)}:`, ...(c ? [`  ${c}`] : []), ...evs.map((e) => eventLine(e, w))];
   if (due.length) lines.push('', 'Due tomorrow:', ...due.map((t) => `- ${taskLine(t, w, tomorrow)}`));
   if (flags.length) lines.push('', 'Needs a decision:', ...flags.map((f) => `- ${f}`));
-  if (appUrl) lines.push('', `Open: ${appUrl}`);
+  if (appUrl) lines.push('', `Open Household: ${appUrl}`);
   const sms = [`Tomorrow:`, ...evs.map((e) => `${prettyTime(e.time)} ${e.title}`), ...due.map((t) => `Due: ${t.title}`), ...flags].join('\n');
   const n = evs.length + due.length;
   return { subject: `Tomorrow: ${n} thing${n === 1 ? '' : 's'}${flags.length ? ' (needs attention)' : ''}`, body: lines.join('\n'), sms };
@@ -96,7 +96,7 @@ export function morningText(w: World, today: string, appUrl: string): Message | 
     ...due.map((t) => `${t.due < today ? 'Overdue' : t.due === today ? 'Due today' : `Due ${dueLabel(t.due, today)}`}: ${t.title}`),
     ...flags.map((f) => f.replace(/^(CONFLICT|NO DRIVER) /, '⚠ ')),
   ];
-  const body = [`Today, ${weekdayOf(today)} ${prettyDate(today).slice(4)}`, '', ...sms, ...(appUrl ? ['', `Open: ${appUrl}`] : [])].join('\n');
+  const body = [`Today, ${weekdayOf(today)} ${prettyDate(today).slice(4)}`, '', ...sms, ...(appUrl ? ['', `Open Household: ${appUrl}`] : [])].join('\n');
   const parts = [evs.length ? `${evs.length} on` : '', due.length ? `${due.length} to do` : ''].filter(Boolean).join(', ');
   return { subject: `Today: ${parts}`, body, sms: sms.join('\n') };
 }
@@ -107,7 +107,7 @@ export function digestText(w: World, appUrl: string): Message | null {
   const lines = [`${n} suggested item${n === 1 ? ' is' : 's are'} waiting in the Inbox:`, '',
     ...w.pending.slice(0, 15).map((p) => `- ${prettyDate(p.date)} ${p.kind === 'task' ? 'to do' : prettyTime(p.time)} ${p.title}`),
     ...(n > 15 ? [`…and ${n - 15} more`] : [])];
-  if (appUrl) lines.push('', `Review: ${appUrl}`);
+  if (appUrl) lines.push('', `Review in Household: ${appUrl}`);
   return { subject: `${n} waiting for approval`, body: lines.join('\n'), sms: `${n} item${n === 1 ? '' : 's'} waiting for approval in the household app.` };
 }
 
