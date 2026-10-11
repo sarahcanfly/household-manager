@@ -10,9 +10,9 @@ create extension if not exists pg_net;
 do $$
 begin
   if exists (select 1 from vault.secrets where name = 'hm_project_url') then
-    perform vault.update_secret((select id from vault.secrets where name = 'hm_project_url'), 'https://YOUR-PROJECT-REF.supabase.co');
+    perform vault.update_secret((select id from vault.secrets where name = 'hm_project_url'), 'https://rolkzfoxypghantxcuev.supabase.co');
   else
-    perform vault.create_secret('https://YOUR-PROJECT-REF.supabase.co', 'hm_project_url');
+    perform vault.create_secret('https://rolkzfoxypghantxcuev.supabase.co', 'hm_project_url');
   end if;
   if not exists (select 1 from vault.secrets where name = 'hm_cron_secret') then
     perform vault.create_secret(encode(extensions.gen_random_bytes(24), 'hex'), 'hm_cron_secret');
