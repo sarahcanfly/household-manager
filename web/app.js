@@ -458,6 +458,9 @@ async function runAsk() {
   stopListening();
   askLog.push({ role: 'user', text: msg });
   const history = askLog.slice(-9, -1).map((m) => ({ role: m.role, content: m.text }));
+  // Clear the box for good: put the keyboard away (ends phone dictation) and empty it.
+  const box = document.getElementById('askin');
+  if (box) { box.value = ''; box.blur(); }
   askText = ''; askBusy = true; askPending = null; errMsg = ''; render();
   try {
     const r = await api.ask(msg, history);
@@ -489,7 +492,9 @@ function toggleMic() {
   recognizer.interimResults = true;
   recognizer.continuous = false;
   const before = askText ? askText.trim() + ' ' : '';
+  const mine = recognizer;
   recognizer.onresult = (ev) => {
+    if (recognizer !== mine || !listening) return;      // late words after Send are ignored
     let said = '';
     for (const r of ev.results) said += r[0].transcript;
     askText = before + said;
@@ -502,7 +507,13 @@ function toggleMic() {
   recognizer.start();
   render();
 }
-function stopListening() { if (recognizer) { try { recognizer.stop(); } catch (_) { /* already stopped */ } } listening = false; }
+function stopListening() {
+  listening = false;
+  if (recognizer) {
+    recognizer.onresult = null;                         // nothing it hears from now on reaches the box
+    try { recognizer.stop(); } catch (_) { /* already stopped */ }
+  }
+}
 
 /* ---------- the bottom sheet ---------- */
 
