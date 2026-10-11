@@ -3,7 +3,8 @@
 
 import { addDays, wallToUtc, weekdayOf, zoned, type Member } from './domain.ts';
 
-export interface IcsItem { title: string; date: string; time: string; place: string; note: string; for_ids: string[] }
+// uid identifies one day of one event in the source calendar, so a synced copy can be updated or removed later.
+export interface IcsItem { title: string; date: string; time: string; place: string; note: string; for_ids: string[]; uid: string }
 export interface FeedRules {
   exclude?: string[]; include?: string[];
   rename?: { from: string; to: string }[];
@@ -48,59 +49,89 @@ function toLocal(p: Prop, tz: string): { date: string; time: string } | null {
 
 const DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 
-/** Dates for a simple DAILY/WEEKLY rule, from the first occurrence up to `until`. Others: first only. */
-function expand(first: string, rrule: string, until: string, exdates: Set<string>): string[] {
+/** Dates for a simple DAILY/WEEKLY rule between `from` and `until`. Other rules: first occurrence only. */
+function expand(first: string, rrule: string, from: string, until: string, exdates: Set<string>): string[] {
   const r = Object.fromEntries(rrule.split(';').map((kv) => kv.split('=')).map(([k, v]) => [k.toUpperCase(), v ?? '']));
   const freq = r.FREQ, interval = Math.max(1, Number(r.INTERVAL) || 1);
   const count = r.COUNT ? Number(r.COUNT) : Infinity;
   const ruleUntil = r.UNTIL ? `${r.UNTIL.slice(0, 4)}-${r.UNTIL.slice(4, 6)}-${r.UNTIL.slice(6, 8)}` : '9999-12-31';
   const last = ruleUntil < until ? ruleUntil : until;
   const out: string[] = [];
-  if (freq !== 'DAILY' && freq !== 'WEEKLY') return exdates.has(first) ? [] : [first];
+  if (freq === 'YEARLY' || freq === 'MONTHLY') {
+    // Same day of the year (birthdays) or of the month, every INTERVAL years/months.
+    const [fy, fm, fd] = first.split('-').map(Number);
+    for (let k = 0, n = 0; k < 600 && n < count; k += interval) {
+      const y = freq === 'YEARLY' ? fy + k : fy + Math.floor((fm - 1 + k) / 12);
+      const m = freq === 'YEARLY' ? fm : ((fm - 1 + k) % 12) + 1;
+      const dt = new Date(Date.UTC(y, m - 1, fd));
+      if (dt.getUTCMonth() !== m - 1) continue;                       // no Feb 30th
+      const day = dt.toISOString().slice(0, 10);
+      if (day > last) break;
+      n++;
+      if (day >= from && !exdates.has(day)) out.push(day);
+    }
+    return out;
+  }
+  if (freq !== 'DAILY' && freq !== 'WEEKLY') return exdates.has(first) || first < from ? [] : [first];
   const byDay = freq === 'WEEKLY' && r.BYDAY
     ? r.BYDAY.split(',').map((c: string) => DAY_CODES.indexOf(c.slice(-2))).filter((i: number) => i >= 0)
     : null;
   const firstDow = DAY_CODES.indexOf(weekdayOf(first).slice(0, 2).toUpperCase());
   let n = 0;
-  for (let i = 0; i < 400 && out.length < 120; i++) {
+  // Walk every day from the first occurrence (COUNT and INTERVAL are counted from there),
+  // keeping only the days inside the window. Ten years of days is still cheap.
+  for (let i = 0; i < 3700 && out.length < 400; i++) {
     const day = addDays(first, i);
     if (day > last || n >= count) break;
-    const diffDays = i;
     let hit: boolean;
-    if (freq === 'DAILY') hit = diffDays % interval === 0;
+    if (freq === 'DAILY') hit = i % interval === 0;
     else {
-      const week = Math.floor((diffDays + firstDow) / 7);
+      const week = Math.floor((i + firstDow) / 7);
       const dow = DAY_CODES.indexOf(weekdayOf(day).slice(0, 2).toUpperCase());
       hit = week % interval === 0 && (byDay ? byDay.includes(dow) : dow === firstDow);
     }
     if (!hit) continue;
     n++;
-    if (!exdates.has(day)) out.push(day);
+    if (day >= from && !exdates.has(day)) out.push(day);
   }
   return out;
 }
+
+const daysBetween = (a: string, b: string) => {
+  const [y1, m1, d1] = a.split('-').map(Number), [y2, m2, d2] = b.split('-').map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000);
+};
 
 export function looksLikeIcs(text: string): boolean {
   return /BEGIN:VCALENDAR/i.test(text) && /BEGIN:VEVENT/i.test(text);
 }
 
-/** Every event in the file, in household time, expanded up to `horizonDays` ahead of today. */
+/**
+ * Every event in the file, in household time, from two weeks back to `horizonDays` ahead.
+ * Repeats are expanded, moved or cancelled single occurrences are respected, and an
+ * all-day event spanning several days becomes one entry per day.
+ */
 export function parseIcs(text: string, tz: string, today: string, horizonDays = 28): IcsItem[] {
-  const out: IcsItem[] = [];
+  const raw: Prop[][] = [];
   let cur: Prop[] | null = null;
-  for (const raw of unfold(text)) {
-    const line = raw.trimEnd();
+  for (const line0 of unfold(text)) {
+    const line = line0.trimEnd();
     if (/^BEGIN:VEVENT$/i.test(line)) { cur = []; continue; }
-    if (/^END:VEVENT$/i.test(line)) {
-      if (cur) out.push(...eventFrom(cur, tz, today, horizonDays));
-      cur = null; continue;
-    }
+    if (/^END:VEVENT$/i.test(line)) { if (cur) raw.push(cur); cur = null; continue; }
     if (cur) { const p = parseLine(line); if (p) cur.push(p); }
   }
-  return out;
+  // A changed single occurrence arrives as its own event with a RECURRENCE-ID; the series must skip that date.
+  const moved = new Map<string, Set<string>>();
+  for (const props of raw) {
+    const uid = props.find((p) => p.name === 'UID')?.value, rid = props.find((p) => p.name === 'RECURRENCE-ID');
+    if (!uid || !rid) continue;
+    const l = toLocal(rid, tz);
+    if (l) { if (!moved.has(uid)) moved.set(uid, new Set()); moved.get(uid)!.add(l.date); }
+  }
+  return raw.flatMap((props) => eventFrom(props, tz, today, horizonDays, moved));
 }
 
-function eventFrom(props: Prop[], tz: string, today: string, horizonDays: number): IcsItem[] {
+function eventFrom(props: Prop[], tz: string, today: string, horizonDays: number, moved: Map<string, Set<string>>): IcsItem[] {
   const get = (n: string) => props.find((p) => p.name === n);
   if ((get('STATUS')?.value ?? '').toUpperCase() === 'CANCELLED') return [];
   const start = get('DTSTART');
@@ -108,15 +139,33 @@ function eventFrom(props: Prop[], tz: string, today: string, horizonDays: number
   if (!start || !title) return [];
   const local = toLocal(start, tz);
   if (!local) return [];
+  const uid = (get('UID')?.value ?? '').trim() || `${title}|${local.date}`;
   const place = unescape(get('LOCATION')?.value ?? '').trim().slice(0, 120);
   const note = unescape(get('DESCRIPTION')?.value ?? '').trim().slice(0, 500);
-  const ex = new Set<string>();
+
+  let span = 1;
+  const end = get('DTEND');
+  if (!local.time && end) {
+    const e = toLocal(end, tz);
+    if (e) span = Math.min(31, Math.max(1, daysBetween(local.date, e.date)));
+  }
+
+  const ex = new Set<string>(get('RECURRENCE-ID') ? [] : (moved.get(uid) ?? []));
   for (const p of props.filter((q) => q.name === 'EXDATE')) {
     for (const v of p.value.split(',')) { const l = toLocal({ ...p, value: v }, tz); if (l) ex.add(l.date); }
   }
+  const from = addDays(today, -14), until = addDays(today, horizonDays);
   const rrule = get('RRULE')?.value;
-  const dates = rrule ? expand(local.date, rrule, addDays(today, horizonDays), ex) : [local.date];
-  return dates.map((date) => ({ title, date, time: local.time, place, note, for_ids: [] }));
+  const starts = rrule && !get('RECURRENCE-ID') ? expand(local.date, rrule, addDays(from, -(span - 1)), until, ex) : [local.date];
+  const out: IcsItem[] = [];
+  for (const s0 of starts) {
+    for (let k = 0; k < span; k++) {
+      const date = addDays(s0, k);
+      if (date > until) break;
+      out.push({ title, date, time: local.time, place, note, for_ids: [], uid: `${uid}|${date}` });
+    }
+  }
+  return out;
 }
 
 /** Rename, drop, and assign people. Names in rules, not ids, so rules survive a roster rebuild. */

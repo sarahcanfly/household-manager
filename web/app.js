@@ -601,6 +601,7 @@ function sheetHtml() {
       dm ? `${dm.name} driving` : e.driver === 'none' ? 'No driving needed' : needsDriver(e) ? 'No driver yet' : '',
       (e.withUs || []).length ? `${names(e.withUs)} with us` : '',
       e.where, e.note,
+      /^sync:/.test(e.source || '') ? `From the ${e.source.slice(5)} calendar. Change it there; edits here are replaced on the next sync.` : '',
     ].filter(Boolean);
     inner = `<h2>${esc(e.title)}</h2><p class="note">${lines.map(esc).join('<br>')}</p>`
       + `<button class="primary" data-act="edit-event" data-id="${e.id}">Edit</button>`

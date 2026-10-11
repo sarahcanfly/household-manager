@@ -125,6 +125,9 @@ reliable delivery later, use an address on your own domain.
 - **Inbox:** paste an email or calendar file, or snap a flyer. Nothing reaches the calendar until you approve it.
 - **Household:** people, who gets emails, reminder times, theme, "check the school calendar now".
 - Feeds, documents and text recipients are edited in Supabase → **Table Editor → settings**.
+- A shared calendar you trust (for example a co-parenting calendar) can sync straight onto the
+  calendar instead of going to the Inbox: give its feed `"mode": "sync"`. See the notes at the top of
+  `supabase/functions/_shared/feedsync.ts` for the options (who it is for, custody days).
 
 ## If something isn't working
 

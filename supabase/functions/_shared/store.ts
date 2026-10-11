@@ -4,8 +4,9 @@
 import { normEvent, normIdea, normMember, normPending, type Ev, type Idea, type World } from './domain.ts';
 import { eq, type Rest } from './db.ts';
 import type { FeedRules } from './ics.ts';
+import type { ExistingRow, FeedRow, SyncFeedConfig, SyncStore } from './feedsync.ts';
 
-export interface Feed extends FeedRules { name: string; url: string }
+export type Feed = SyncFeedConfig;
 export interface DocSource { id: string; name: string; type?: 'doc' | 'pdf'; hint?: string }
 export interface SmsRecipient { name: string; number: string; carrier: string }
 export interface Settings {
@@ -42,7 +43,7 @@ export interface StageRow {
 }
 export interface StageResult { added: number; past: number; dupe: number }
 
-export interface Store {
+export interface Store extends SyncStore {
   world(): Promise<World>;
   settings(): Promise<Settings>;
   insertEvent(row: EventRow): Promise<Ev>;
@@ -107,6 +108,26 @@ export class RestStore implements Store {
   async stage(rows: StageRow[]) {
     if (!rows.length) return { added: 0, past: 0, dupe: 0 };
     return await this.db.rpc<StageResult>('stage_pending', { rows });
+  }
+  async feedEvents(feed: string): Promise<ExistingRow[]> {
+    const rows = await this.db.select('events', `select=*&feed=${eq(feed)}`);
+    return rows.map((r) => ({ ...normEvent(r), uid: String(r.feed_uid ?? '') }));
+  }
+  async insertFeedEvents(feed: string, rows: FeedRow[]) {
+    // One request, so the calendar sync is triggered once rather than once per event.
+    await this.db.req('POST', 'events', rows.map((r) => ({
+      title: r.title, date: r.date, time: r.time || null, for_ids: r.for_ids, with_us: r.with_us,
+      driver: r.driver || null, place: r.place, note: r.note, source: `sync:${feed}`, created_by: feed,
+      feed, feed_uid: r.uid,
+    })), 'return=minimal');
+  }
+  async patchFeedEvent(id: string, patch: Partial<FeedRow>) {
+    const { uid: _uid, ...rest } = patch;
+    await this.db.update('events', `id=${eq(id)}`, toDb(rest as Partial<EventRow>));
+  }
+  async deleteEvents(ids: string[]) {
+    if (!ids.length) return;
+    await this.db.req('DELETE', `events?id=in.(${ids.map((i) => `"${i.replace(/"/g, '')}"`).join(',')})`, undefined, 'return=minimal');
   }
   async log(actor: string, action: string, detail: string) {
     try { await this.db.insert('log', { actor, action, detail: detail.slice(0, 2000) }); } catch (e) { console.error('log failed', e); }

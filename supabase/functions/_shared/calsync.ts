@@ -25,7 +25,8 @@ export function calendarTitle(e: Ev, members: Member[], today: string): string {
   let title = e.title;
   const kids = members.filter((m) => m.active && m.kind === 'kid').map((m) => m.id);
   const allKids = kids.length >= 2 && kids.every((id) => e.for_ids.includes(id)) && e.for_ids.length === kids.length;
-  if (names.length && !everyone && !names.some((n) => low.includes(n.toLowerCase()))) title += allKids ? ' (kids)' : ` (${names.join(' & ')})`;
+  const synced = (e.source || '').startsWith('sync:');   // titles from a shared calendar already say who
+  if (names.length && !everyone && !synced && !names.some((n) => low.includes(n.toLowerCase()))) title += allKids ? ' (kids)' : ` (${names.join(' & ')})`;
   const missingDriver = !!e.time && !e.driver && hasKid(e.for_ids, members) && e.date >= today;
   return missingDriver ? `⚠ ${title}` : title;
 }

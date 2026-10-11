@@ -112,6 +112,12 @@ test('calendar sync: stops early and logs once when Google refuses everything', 
   assert.ok(logs.some(([a, dt]) => a === 'calendarSync stopped' && /404/.test(dt)));
 });
 
+test('synced titles are left as written', () => {
+  const m = members();
+  assert.equal(cal.calendarTitle(ev({ title: "M&L @Alex's", for_ids: ['k1', 'k2'], source: 'sync:Co-parent' }), m, plus(0)), "M&L @Alex's");
+  assert.equal(cal.calendarTitle(ev({ title: 'Swim', for_ids: ['k1', 'k2'] }), m, plus(0)), 'Swim (Mia & Leo)');
+});
+
 test('addMinutes crosses midnight', () => {
   assert.deepEqual(cal.addMinutes('2026-12-31', '23:30', 60), { date: '2027-01-01', time: '00:30' });
 });

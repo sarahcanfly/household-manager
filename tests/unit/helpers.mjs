@@ -46,6 +46,10 @@ export class MemoryStore {
     }
     return { added, past, dupe };
   }
+  async feedEvents(feed) { return structuredClone(this.events.filter((e) => e.feed === feed).map((e) => ({ ...e, uid: e.feed_uid }))); }
+  async insertFeedEvents(feed, rows) { for (const r of rows) { const { uid, ...rest } = r; this.events.push(ev({ ...rest, id: 'f' + (++this.n), feed, feed_uid: uid, source: `sync:${feed}` })); } this.batches = (this.batches || 0) + 1; }
+  async patchFeedEvent(id, patch) { const e = this.events.find((x) => x.id === id); if (e) Object.assign(e, patch); }
+  async deleteEvents(ids) { this.events = this.events.filter((e) => !ids.includes(e.id)); }
   async log(actor, action, detail) { this.logs.push({ actor, action, detail }); }
 }
 

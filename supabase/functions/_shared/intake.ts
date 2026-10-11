@@ -7,6 +7,7 @@ import { buildPrompt, parseExtraction, type ExtractKind, type Extracted } from '
 import { applyRules, looksLikeIcs, mergeRules, parseIcs, type IcsItem } from './ics.ts';
 import { textOf, type ClaudeFn } from './claude.ts';
 import type { Feed, Settings, StageRow, Store, DocSource } from './store.ts';
+import { syncFeed } from './feedsync.ts';
 
 export interface IntakeDeps { store: Store; claude: ClaudeFn; now?: Date }
 export interface IntakeResult { found: number; added: number; past: number; dupe: number; parsed: boolean }
@@ -72,8 +73,15 @@ export async function pollSources(d: PollDeps, actor: string): Promise<string[]>
     try {
       const text = await d.fetchText(f.url);
       if (!looksLikeIcs(text)) throw new Error('not a calendar file');
-      const r = await intakeIcs(d, text, 'feed', f.url, f);
-      report.push(`${f.name}: found ${r.found}, queued ${r.added}, ${r.past} past, ${r.dupe} already known`);
+      if (f.mode === 'sync') {
+        const [w, today] = [await d.store.world(), todayIn(s.timezone, d.now ?? new Date())];
+        const items = applyRules(parseIcs(text, s.timezone, today, f.horizon_days ?? 120), mergeRules(s.ics_rules ?? {}, f), w.members);
+        const r = await syncFeed(d.store, f, items, w.members, today);
+        report.push(`${f.name}: added ${r.added}, updated ${r.updated}, removed ${r.removed}`);
+      } else {
+        const r = await intakeIcs(d, text, 'feed', f.url, f);
+        report.push(`${f.name}: found ${r.found}, queued ${r.added}, ${r.past} past, ${r.dupe} already known`);
+      }
     } catch (e) { report.push(`${f.name}: error ${(e as Error).message}`); }
   }
   for (const doc of (s.docs ?? []) as DocSource[]) {

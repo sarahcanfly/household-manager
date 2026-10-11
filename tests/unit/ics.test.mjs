@@ -21,7 +21,9 @@ const sample = [
 test('parses times, all-day, UTC, folding, escapes, cancellations', () => {
   const items = ics.parseIcs(sample, TZ, '2026-10-10', 28);
   const by = (t) => items.filter((i) => i.title === t);
-  assert.deepEqual(by('Oakwood Middle School Open House')[0], { title: 'Oakwood Middle School Open House', date: '2026-10-15', time: '18:00', place: 'Oakwood, Gym', note: '', for_ids: [] });
+  const { uid, ...rest } = by('Oakwood Middle School Open House')[0];
+  assert.deepEqual(rest, { title: 'Oakwood Middle School Open House', date: '2026-10-15', time: '18:00', place: 'Oakwood, Gym', note: '', for_ids: [] });
+  assert.match(uid, /\|2026-10-15$/);
   assert.equal(by('No School')[0].time, '');
   assert.equal(by('Board meeting')[0].time, '19:00');
   assert.deepEqual([by('Late flight')[0].date, by('Late flight')[0].time], ['2026-10-20', '23:00']);
