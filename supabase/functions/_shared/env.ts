@@ -4,8 +4,10 @@
 type EnvSource = { get(k: string): string | undefined };
 const g = globalThis as unknown as { Deno?: { env: EnvSource }; process?: { env: Record<string, string | undefined> } };
 
+/** Trimmed, because a stray space or line break pasted into a secret is easy to miss. */
 export function env(key: string, fallback = ''): string {
-  return g.Deno?.env.get(key) ?? g.process?.env[key] ?? fallback;
+  const v = (g.Deno?.env.get(key) ?? g.process?.env[key] ?? '').trim();
+  return v || fallback;
 }
 
 export function must(key: string): string {

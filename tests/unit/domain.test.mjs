@@ -72,3 +72,12 @@ test('isFillOnly and diff', () => {
   assert.deepEqual(d.diff(cur, { time: '14:00', driver: 'none' }, m), ['time: 1:30pm -> 2pm', 'driver: not set -> no driving needed']);
   assert.deepEqual(d.diff(cur, { time: '13:30' }, m), []);
 });
+
+test('secrets are trimmed of stray spaces and line breaks', async () => {
+  const { env } = await import('../../.build/supabase/functions/_shared/env.js');
+  process.env.HM_TEST_SECRET = '  abc123@group.calendar.google.com\n';
+  assert.equal(env('HM_TEST_SECRET'), 'abc123@group.calendar.google.com');
+  process.env.HM_TEST_SECRET = '  \n';
+  assert.equal(env('HM_TEST_SECRET', 'fallback'), 'fallback');
+  delete process.env.HM_TEST_SECRET;
+});
