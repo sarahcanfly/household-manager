@@ -134,3 +134,18 @@ test('history is cleaned; API failure gives a readable reply', async () => {
   assert.match((await agent.ask('   ', [])).reply, /What would you like/);
   assert.equal(TOOLS.length, 8);
 });
+
+test('all-day events (custody, no school) say nothing about driving', async () => {
+  const d = plus(1);
+  const { make } = setup({ events: [
+    ev({ id: 'c1', title: "A&O @Sarah's", date: d, time: '', for_ids: ['k1', 'k2'], driver: 'none' }),
+    ev({ id: 't1', title: 'Soccer', date: d, time: '17:00', for_ids: ['k2'], driver: '' }),
+  ] });
+  const { agent, claude } = make([use('search_events', { from: d, to: d }), say('ok')]);
+  await agent.ask('what is on tomorrow?', []);
+  const rows = JSON.parse(lastToolResults(claude)[0].content);
+  const custody = rows.find((r) => r.id === 'c1'), soccer = rows.find((r) => r.id === 't1');
+  assert.equal('driver' in custody, false);
+  assert.equal(soccer.driver, 'unassigned');
+  assert.match(claude.calls[0].system, /never say that no driving is needed/);
+});
