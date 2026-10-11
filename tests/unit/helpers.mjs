@@ -29,6 +29,7 @@ export class MemoryStore {
     this.s = { ...DEFAULT_SETTINGS, ...settings }; this.tokens = new Map(); this.logs = []; this.n = 0;
   }
   async world() { return structuredClone({ members: this.m, events: this.events, pending: this.pending, ideas: this.ideas, tasks: this.tasks }); }
+  async setSetting(key, value) { this.s[key] = structuredClone(value); }
   async insertTaste(row) { (this.taste = this.taste || []).push(row); }
   async insertTask(row) { const t = { id: 't' + (++this.n), done: false, ...row }; delete t.created_by; this.tasks.push(t); return structuredClone(t); }
   async updateTask(id, patch) { const t = this.tasks.find((x) => x.id === id); if (!t) return null; Object.assign(t, patch); return structuredClone(t); }

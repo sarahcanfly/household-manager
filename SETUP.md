@@ -181,6 +181,9 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
 - **Around town this week:** the weekly summary email ends with a few local events found by Claude with web search
   (with links). Change the area, distance and interests in `local_events` in the settings table, or set `enabled` to
   false. Web search has to be allowed for your organization in the Claude Console; it costs about a cent a search.
+- **Your own weekly searches:** ask the agent "add a weekly search to my email for mahjong open play near
+  Framingham". It shows up only in your copy of the weekly email (each person can have up to 4; "list my weekly
+  searches", "remove the mahjong search"). Stored in `personal_searches` in settings.
 - **Teach it what you like:** each suggestion has 👍 Interested / 👎 Not for us links, and adding one counts as a like.
   You can also tell the agent ("we love bluegrass", "no big crowds"). The next week's search leans that way.
   Everything it has learned is in the `event_taste` table.

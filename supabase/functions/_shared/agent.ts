@@ -78,12 +78,16 @@ export const TOOLS = [
       for: eventFields.for, note: { type: 'string' } }, required: ['title', 'due'] } },
   { name: 'save_event_taste', description: 'Remember what kind of outings and events the household likes or does not ("we love bluegrass", "no big crowds", "the kids hate museums"), so the weekly "Around town" suggestions fit them better.',
     input_schema: { type: 'object', properties: { thing: { type: 'string', description: 'What they like or dislike, in a few words' }, liked: { type: 'boolean' } }, required: ['thing', 'liked'] } },
+  { name: 'weekly_search', description: 'Manage the asking person\'s own searches in THEIR copy of the weekly email (not anyone else\'s), e.g. "mahjong open play near Framingham". action add needs title and what; remove needs title; list shows them.',
+    input_schema: { type: 'object', properties: { action: { type: 'string', enum: ['add', 'remove', 'list'] },
+      title: { type: 'string', description: 'Short heading, e.g. "Mahjong open play"' },
+      what: { type: 'string', description: 'What to look for, specific enough to search: kind of activity, style, level' } }, required: ['action'] } },
   { name: 'update_task', description: 'Tick off (done: true), reopen, or change a to-do. Takes effect immediately.',
     input_schema: { type: 'object', properties: { id: { type: 'string', description: 'To-do id, from list_tasks' }, done: { type: 'boolean' },
       title: { type: 'string' }, due: { type: 'string', description: 'YYYY-MM-DD' }, for: eventFields.for, note: { type: 'string' } }, required: ['id'] } },
 ];
 
-const WRITE = new Set(['add_event', 'add_repeating_event', 'add_idea', 'update_event', 'delete_event', 'add_task', 'update_task', 'save_event_taste']);
+const WRITE = new Set(['add_event', 'add_repeating_event', 'add_idea', 'update_event', 'delete_event', 'add_task', 'update_task', 'save_event_taste', 'weekly_search']);
 const MAX_REPEATS = 150;
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -296,6 +300,29 @@ export class Agent {
     return { ok: true, message: `Deleted ${label}.` };
   }
 
+  async weeklySearch(input: Record<string, unknown>) {
+    const me = this.d.actor.toLowerCase();
+    const s = await this.d.store.settings();
+    const all = (s.personal_searches ?? []).filter((p) => p && p.email);
+    const mine = all.filter((p) => p.email.toLowerCase() === me);
+    const title = String(input.title ?? '').trim().slice(0, 60);
+    if (input.action === 'list') return { searches: mine.map((p) => ({ title: p.title, what: p.what })) };
+    if (input.action === 'remove') {
+      const keep = all.filter((p) => !(p.email.toLowerCase() === me && p.title.toLowerCase() === title.toLowerCase()));
+      if (keep.length === all.length) throw new Invalid(`No weekly search called "${title}". Yours: ${mine.map((p) => p.title).join(', ') || 'none'}.`);
+      await this.d.store.setSetting('personal_searches', keep);
+      return { ok: true, removed: title };
+    }
+    const what = String(input.what ?? '').trim().slice(0, 300);
+    if (!title || !what) throw new Invalid('title and what are required');
+    if (mine.length >= 4 && !mine.some((p) => p.title.toLowerCase() === title.toLowerCase())) throw new Invalid('That is already 4 weekly searches. Remove one first.');
+    const next = [...all.filter((p) => !(p.email.toLowerCase() === me && p.title.toLowerCase() === title.toLowerCase())), { email: me, title, what, max: 4 }];
+    await this.d.store.setSetting('personal_searches', next);
+    const gets = (s.notify ?? []).some((e) => e.toLowerCase() === me);
+    await this.d.store.log(this.d.actor, 'agent weeklySearch', title);
+    return { ok: true, added: title, note: gets ? 'It will appear in their next weekly email.' : `Warning: ${me} is not on the weekly email list, so they will not see it until that email is added under Household.` };
+  }
+
   async addTask(input: Record<string, unknown>) {
     const w = await this.d.store.world();
     const f = cleanFields({ title: input.title, date: input.due, for: input.for, note: input.note }, w.members, this.today(), false);
@@ -338,6 +365,7 @@ export class Agent {
     if (name === 'add_idea') return await this.addIdea(input);
     if (name === 'add_task') return await this.addTask(input);
     if (name === 'add_repeating_event') return await this.addRepeating(input);
+    if (name === 'weekly_search') return await this.weeklySearch(input);
     if (name === 'save_event_taste') {
       const thing = String(input.thing ?? '').trim().slice(0, 120);
       if (!thing) throw new Invalid('thing is required');

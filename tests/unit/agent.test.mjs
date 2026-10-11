@@ -132,7 +132,7 @@ test('history is cleaned; API failure gives a readable reply', async () => {
   const r = await agent.ask('x', []);
   assert.match(r.reply, /Something went wrong/); assert.equal(r.changed, false);
   assert.match((await agent.ask('   ', [])).reply, /What would you like/);
-  assert.equal(TOOLS.length, 13);
+  assert.equal(TOOLS.length, 14);
 });
 
 test('all-day events (custody, no school) say nothing about driving', async () => {
@@ -207,4 +207,21 @@ test('the agent can remember what kind of outings the household likes', async ()
   const { agent } = make([use('save_event_taste', { thing: 'bluegrass and folk music', liked: true }), say('Got it.')]);
   await agent.ask('we love bluegrass and folk', []);
   assert.deepEqual(store.taste, [{ title: 'bluegrass and folk music', kind: 'note', place: '', vote: 1, how: 'told', by_email: 'alex@x.com' }]);
+});
+
+test('weekly_search adds, lists and removes searches for the person asking only', async () => {
+  const { store, make } = setup({ settings: { notify: ['alex@x.com'], personal_searches: [{ email: 'jordan@x.com', title: 'Pickleball', what: 'pickleball open play' }] } });
+  let { agent, claude } = make([use('weekly_search', { action: 'add', title: 'Mahjong open play', what: 'American mahjong (NMJL card) open play near Framingham' }), say('Added.')]);
+  await agent.ask('add mahjong open play to my weekly email', []);
+  assert.deepEqual(store.s.personal_searches.map((p) => [p.email, p.title]), [['jordan@x.com', 'Pickleball'], ['alex@x.com', 'Mahjong open play']]);
+  assert.match(JSON.parse(lastToolResults(claude)[0].content).note, /next weekly email/);
+  ({ agent, claude } = make([use('weekly_search', { action: 'list' }), say('ok')]));
+  await agent.ask('what searches do I have', []);
+  assert.deepEqual(JSON.parse(lastToolResults(claude)[0].content).searches.map((p) => p.title), ['Mahjong open play']);
+  ({ agent, claude } = make([use('weekly_search', { action: 'remove', title: 'Pickleball' }), say('ok')]));
+  await agent.ask('remove pickleball', []);
+  assert.match(lastToolResults(claude)[0].content, /No weekly search called "Pickleball"/, 'cannot remove someone else\'s');
+  ({ agent } = make([use('weekly_search', { action: 'remove', title: 'mahjong open play' }), say('ok')]));
+  await agent.ask('stop the mahjong search', []);
+  assert.deepEqual(store.s.personal_searches.map((p) => p.title), ['Pickleball']);
 });

@@ -18,6 +18,8 @@ export interface NotifyDeps {
   push?: (m: PushMessage) => Promise<unknown>;
   /** "Around town" suggestions for the weekly email; failures leave the section out. */
   around?: (start: string) => Promise<string[]>;
+  /** Extra sections for one person's copy of the weekly email, by email address. */
+  personal?: (start: string, recipients: string[]) => Promise<Record<string, string[]>>;
   /** Real texts (Twilio). Without it, texts go through carrier email gateways. */
   text?: Texter;
   now?: Date;
@@ -39,14 +41,21 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
   const sent: string[] = [];
   const recipients = s.notify ?? [];
 
-  const deliver = async (kind: NotifyKind, msg: { subject: string; body: string; sms: string } | null, smsOn: boolean, emailOn = true) => {
+  const deliver = async (kind: NotifyKind, msg: { subject: string; body: string; sms: string } | null, smsOn: boolean, emailOn = true,
+    bodyFor?: (email: string) => string | null) => {
     if (!msg) return;
     const pushOn = { weekly: s.push?.weekly, reminder: s.push?.reminders, digest: s.push?.digest, morning: true }[kind] ?? true;
     if (d.push && pushOn !== false) {
       try { await d.push(pushFrom(kind, msg, d.appUrl)); }
       catch (e) { await d.store.log('scheduled', 'push error', (e as Error).message); }
     }
-    if (emailOn && recipients.length) await d.mail(recipients, msg.subject, msg.body);
+    if (emailOn && recipients.length) {
+      // Someone with their own sections gets their own copy; everyone else shares one email.
+      const own = bodyFor ? recipients.filter((r) => bodyFor(r)) : [];
+      const shared = recipients.filter((r) => !own.includes(r));
+      if (shared.length) await d.mail(shared, msg.subject, msg.body);
+      for (const r of own) await d.mail([r], msg.subject, bodyFor!(r)!);
+    }
     if (s.sms?.enabled && smsOn) {
       for (const r of s.sms.recipients ?? []) {
         const body = trimSms(msg.sms, s.sms.max_chars || 600);
@@ -71,7 +80,14 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
       try { around = await d.around(z.date); }
       catch (e) { await d.store.log('scheduled', 'local events error', (e as Error).message); }
     }
-    await deliver('weekly', weeklyText(w, z.date, d.appUrl, around), !!s.sms?.weekly);
+    let mine: Record<string, string[]> = {};
+    if (d.personal && recipients.length) {
+      try { mine = await d.personal(z.date, recipients); }
+      catch (e) { await d.store.log('scheduled', 'personal search error', (e as Error).message); }
+    }
+    const extraFor = (email: string) => mine[email.toLowerCase()] ?? [];
+    await deliver('weekly', weeklyText(w, z.date, d.appUrl, around), !!s.sms?.weekly, true,
+      (email) => (extraFor(email).length ? weeklyText(w, z.date, d.appUrl, [...around, ...(around.length ? [''] : []), ...extraFor(email)]).body : null));
   }
   if (due('reminder', s.reminders?.enabled, s.reminders?.hour) && (force === 'reminder' || await d.claim('reminder', z.date))) {
     await deliver('reminder', tomorrowText(w, addDays(z.date, 1), d.appUrl), !!s.sms?.reminders);

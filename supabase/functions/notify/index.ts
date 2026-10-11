@@ -10,7 +10,7 @@ import { sendMail } from '../_shared/mail.ts';
 import { runNotify, type NotifyKind } from '../_shared/notifyjob.ts';
 import { pushToHousehold } from '../_shared/pushdb.ts';
 import { twilioReady, twilioTexter } from '../_shared/sms.ts';
-import { DEFAULT_LOCAL, findLocalEvents, localLines, tasteFrom, type TasteRow } from '../_shared/localevents.ts';
+import { DEFAULT_LOCAL, findLocalEvents, findPersonal, localLines, personalLines, tasteFrom, type TasteRow } from '../_shared/localevents.ts';
 import { callClaude } from '../_shared/claude.ts';
 
 Deno.serve(handler(async (req) => {
@@ -38,6 +38,21 @@ Deno.serve(handler(async (req) => {
     // A test from the app goes only to the person who asked for it.
     push: (m) => pushToHousehold(db, m, force ? actor : undefined),
     text: twilioReady() ? twilioTexter() : undefined,
+    personal: async (start, recipients) => {
+      const s = await store.settings();
+      if (!env('ANTHROPIC_API_KEY')) return {};
+      const loc = { ...DEFAULT_LOCAL, ...s.local_events };
+      const out: Record<string, string[]> = {};
+      const wanted = new Set(recipients.map((r) => r.toLowerCase()));
+      for (const p of (s.personal_searches ?? []).filter((x) => x?.email && x?.what && wanted.has(x.email.toLowerCase())).slice(0, 6)) {
+        const key = p.email.toLowerCase();
+        let lines: string[];
+        try { lines = personalLines(p.title || 'Your search', await findPersonal(callClaude, p, loc.area || 'Framingham, MA', loc.radius_miles ?? 15, start, s.timezone), env('APP_URL')); }
+        catch (e) { await store.log('scheduled', 'personal search error', `${p.title}: ${(e as Error).message}`); continue; }
+        out[key] = [...(out[key] ?? []), ...(out[key]?.length ? [''] : []), ...lines];
+      }
+      return out;
+    },
     around: async (start) => {
       const s = await store.settings();
       if (!s.local_events?.enabled || !env('ANTHROPIC_API_KEY')) return [];

@@ -111,3 +111,38 @@ test('a row of [label](url) links becomes links in the email', async () => {
   const html = textToHtml('  [Details](https://a.example/x?y=1&z=2) · [👍 Interested](https://app.example/?rate=up&title=Jazz)');
   assert.match(html, /<a href="https:\/\/a.example\/x\?y=1&amp;z=2"[^>]*>Details<\/a> · <a href="https:\/\/app.example\/\?rate=up&amp;title=Jazz"[^>]*>👍 Interested<\/a>/);
 });
+
+test('personal searches: in only that person\'s copy of the weekly email', async () => {
+  const now = new Date('2026-10-12T11:10:00Z');
+  const store = new MemoryStore({ settings: { notify: ['Sarah@x.com', 'mikey@x.com'] } });
+  const mails = [];
+  const deps = { store, now, appUrl: 'https://app.example', claim: async () => true, mail: async (to, subject, text) => mails.push({ to, text }),
+    around: async () => ['Around town this week:', '- Sat: Pumpkin festival'],
+    personal: async () => ({ 'sarah@x.com': L.personalLines('Mahjong open play', [good({ title: 'Open play at the library', date: '2026-10-14', time: '13:00', why: 'Drop in; bring your 2026 card', kind: 'event' })], 'https://app.example') }) };
+  await runNotify(deps, 'weekly');
+  assert.equal(mails.length, 2);
+  const mikey = mails.find((m) => m.to.includes('mikey@x.com')), sarah = mails.find((m) => m.to.includes('Sarah@x.com'));
+  assert.deepEqual([mikey.to, sarah.to], [['mikey@x.com'], ['Sarah@x.com']]);
+  assert.doesNotMatch(mikey.text, /Mahjong/);
+  assert.match(sarah.text, /Around town this week:[\s\S]*Mahjong open play this week:\n- Wed Oct 14 1pm: Open play at the library[\s\S]*Drop in; bring your 2026 card/);
+  // Nobody with a personal section: one shared email as before
+  mails.length = 0;
+  await runNotify({ ...deps, personal: async () => ({}) }, 'weekly');
+  assert.deepEqual(mails.map((m) => m.to), [['Sarah@x.com', 'mikey@x.com']]);
+  // A failing personal search still sends everyone the normal email
+  mails.length = 0;
+  await runNotify({ ...deps, personal: async () => { throw new Error('boom'); } }, 'weekly');
+  assert.equal(mails.length, 1);
+});
+
+test('personal search prompt keeps regular sessions and asks how to join', async () => {
+  const p = L.personalPrompt({ email: 'a', title: 'Mahjong open play', what: 'American mahjong (NMJL card) open play and lessons' }, 'Framingham, MA', 15, start);
+  assert.match(p, /American mahjong \(NMJL card\) open play/);
+  assert.match(p, /regular weekly or monthly sessions/);
+  assert.match(p, /how to join/);
+  const claude = fakeClaude([say(JSON.stringify([good({ title: 'Mahjong at the senior center', date: '2026-10-13' })]))]);
+  const out = await L.findPersonal(claude, { email: 'a', title: 'x', what: 'mahjong' }, 'Framingham, MA', 15, start, 'America/New_York');
+  assert.deepEqual(out.map((e) => e.title), ['Mahjong at the senior center']);
+  assert.equal(claude.calls[0].tools[0].type, 'web_search_20250305');
+  assert.deepEqual(L.personalLines('Mahjong open play', []), ['Mahjong open play this week:', '- Nothing found this week.']);
+});

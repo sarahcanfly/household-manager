@@ -5,7 +5,7 @@ import { normEvent, normIdea, normMember, normPending, normTask, addDays, type E
 import { eq, type Rest } from './db.ts';
 import type { FeedRules } from './ics.ts';
 import type { ExistingRow, FeedRow, SyncFeedConfig, SyncStore } from './feedsync.ts';
-import { DEFAULT_LOCAL, type LocalSettings } from './localevents.ts';
+import { DEFAULT_LOCAL, type LocalSettings, type PersonalSearch } from './localevents.ts';
 
 export type Feed = SyncFeedConfig;
 export interface DocSource { id: string; name: string; type?: 'doc' | 'pdf'; hint?: string }
@@ -17,6 +17,7 @@ export interface Settings {
   digest: { enabled: boolean; hour: number };
   morning: { enabled: boolean; hour: number; email: boolean };
   local_events: LocalSettings;
+  personal_searches: PersonalSearch[];
   notify: string[];
   sms: { enabled: boolean; weekly: boolean; reminders: boolean; digest: boolean; morning?: boolean; max_chars: number; recipients: SmsRecipient[] };
   push: { weekly: boolean; reminders: boolean; digest: boolean };
@@ -33,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   digest: { enabled: true, hour: 19 },
   morning: { enabled: true, hour: 7, email: false },
   local_events: DEFAULT_LOCAL,
+  personal_searches: [],
   notify: [],
   sms: { enabled: false, weekly: true, reminders: true, digest: false, max_chars: 600, recipients: [] },
   push: { weekly: true, reminders: true, digest: true },
@@ -71,6 +73,7 @@ export interface Store extends SyncStore {
   redeemToken(token: string): Promise<{ action: 'update' | 'delete'; args: Record<string, unknown> } | null>;
   stage(rows: StageRow[]): Promise<StageResult>;
   log(actor: string, action: string, detail: string): Promise<void>;
+  setSetting(key: string, value: unknown): Promise<void>;
 }
 
 /** Database columns use null for "all day" and "driver undecided"; the app uses ''. */
@@ -126,6 +129,7 @@ export class RestStore implements Store {
   async insertIdea(row: Omit<Idea, 'id'>) {
     return normIdea((await this.db.insert('ideas', { ...row, date: row.date || null, time: row.time || null }))[0]);
   }
+  async setSetting(key: string, value: unknown) { await this.db.upsert('settings', [{ key, value }], 'key'); }
   async insertTaste(row: { title: string; kind: string; place: string; vote: 1 | -1; how: string; by_email: string }) {
     await this.db.req('POST', 'event_taste', row, 'return=minimal');
   }
