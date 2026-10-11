@@ -246,6 +246,20 @@ export function awayClashes(events: Ev[], members: Member[]): AwayClash[] {
   return out;
 }
 
+/** Kids in this event who are at another house that day (their other parent has them). */
+export function awayKids(e: Ev, events: Ev[]): string[] {
+  const day = custodyDays(events.filter((x) => x.date === e.date)).get(e.date);
+  return day ? e.for_ids.filter((id) => day.away.includes(id)) : [];
+}
+
+/** Needs one of us to drive: a kid event with no driver, unless every kid in it is with their other parent that day. */
+export function needsOurDriver(e: Ev, events: Ev[], members: Member[]): boolean {
+  if (!needsDriver(e, members)) return false;
+  const kids = e.for_ids.filter((id) => members.find((m) => m.id === id)?.kind === 'kid');
+  const away = awayKids(e, events);
+  return !kids.every((id) => away.includes(id));
+}
+
 export const awayLine = (c: AwayClash, members: Member[]) =>
   `${prettyDate(c.e.date)} ${prettyTime(c.e.time)} ${c.e.title}: ${namesOf(c.kids, members).join(' & ')} ${c.kids.length > 1 ? 'are' : 'is'} at ${c.where} that day`;
 

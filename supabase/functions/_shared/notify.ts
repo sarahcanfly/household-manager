@@ -2,7 +2,7 @@
 // "today" note and the "things are waiting" digest. Pure: the caller sends them.
 
 import {
-  addDays, awayClashes, awayLine, conflictLine, conflicts, custodyDays, custodyLabel, dueLabel, namesOf, needsDriver,
+  addDays, awayClashes, conflictLine, conflicts, custodyDays, custodyLabel, dueLabel, namesOf, needsOurDriver,
   prettyDate, prettyTime, tasksDueBy, weekdayOf, type Ev, type Task, type World,
 } from './domain.ts';
 
@@ -12,8 +12,11 @@ function eventLine(e: Ev, w: World): string {
   const who = namesOf(e.for_ids, w.members);
   const driver = e.driver === 'none' ? '' : e.driver
     ? ` — ${w.members.find((m) => m.id === e.driver)?.name ?? 'someone'} driving`
-    : needsDriver(e, w.members) ? ' — NO DRIVER YET' : '';
-  return `  ${prettyTime(e.time).padEnd(7)} ${e.title}${who.length ? ` (${who.join(' & ')})` : ''}${driver}${e.place ? ` @ ${e.place}` : ''}`;
+    : needsOurDriver(e, w.events, w.members) ? ' — NO DRIVER YET' : '';
+  // Kids at the other house that day: just a note, the other parent has it covered.
+  const away = awayClashes([e, ...w.events.filter((x) => x.date === e.date && x.custody)], w.members)
+    .map((c) => ` — ${namesOf(c.kids, w.members).join(' & ')} at ${c.where}`).join('');
+  return `  ${prettyTime(e.time).padEnd(7)} ${e.title}${who.length ? ` (${who.join(' & ')})` : ''}${driver}${away}${e.place ? ` @ ${e.place}` : ''}`;
 }
 
 const sortByTime = (a: Ev, b: Ev) => (a.time || '00:00').localeCompare(b.time || '00:00');
@@ -28,8 +31,7 @@ function taskLine(t: Task, w: World, today: string): string {
 function attention(events: Ev[], w: World): string[] {
   const out: string[] = [];
   for (const c of conflicts(events, w.members)) out.push(`CONFLICT ${conflictLine(c)}`);
-  for (const e of events.filter((x) => needsDriver(x, w.members))) out.push(`NO DRIVER ${prettyDate(e.date)} ${prettyTime(e.time)}: ${e.title}`);
-  for (const c of awayClashes(events, w.members)) out.push(`CUSTODY ${awayLine(c, w.members)}`);
+  for (const e of events.filter((x) => needsOurDriver(x, w.events, w.members))) out.push(`NO DRIVER ${prettyDate(e.date)} ${prettyTime(e.time)}: ${e.title}`);
   return out;
 }
 
@@ -92,7 +94,7 @@ export function morningText(w: World, today: string, appUrl: string): Message | 
     ...(c ? [c] : []),
     ...evs.map(short),
     ...due.map((t) => `${t.due < today ? 'Overdue' : t.due === today ? 'Due today' : `Due ${dueLabel(t.due, today)}`}: ${t.title}`),
-    ...flags.map((f) => f.replace(/^(CONFLICT|NO DRIVER|CUSTODY) /, '⚠ ')),
+    ...flags.map((f) => f.replace(/^(CONFLICT|NO DRIVER) /, '⚠ ')),
   ];
   const body = [`Today, ${weekdayOf(today)} ${prettyDate(today).slice(4)}`, '', ...sms, ...(appUrl ? ['', `Open: ${appUrl}`] : [])].join('\n');
   const parts = [evs.length ? `${evs.length} on` : '', due.length ? `${due.length} to do` : ''].filter(Boolean).join(', ');

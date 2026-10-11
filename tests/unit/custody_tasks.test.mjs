@@ -73,7 +73,8 @@ test('evening reminder and weekly summary include to-dos and custody, and skip t
   const t = tomorrowText(w, '2026-10-14', '');
   assert.match(t.body, /Mia & Leo at Rose's/);
   assert.match(t.body, /Due tomorrow:\n- Picture money \(Mia\)/);
-  assert.match(t.body, /CUSTODY .*Leo is at Rose's/);
+  assert.match(t.body, /5pm\s+Soccer \(Leo\) — Alex driving — Leo at Rose's/);
+  assert.doesNotMatch(t.body, /Needs a decision|CUSTODY/, 'custody is information, not a decision');
   assert.doesNotMatch(t.body, /M&L @Rose's/);
   assert.equal(tomorrowText({ ...w, events: [], tasks: [task({ due: '2026-10-14', title: 'Only a form' })] }, '2026-10-14', '').subject, 'Tomorrow: 1 thing');
   const wk = weeklyText(w, '2026-10-12', '');
@@ -135,6 +136,7 @@ test('agent hears about custody: in its instructions and when adding on an away 
   const { agent, claude } = agentWith(store, [use('add_event', { title: 'Soccer', date: day, time: '17:00', for: ['Leo'], driver: 'Alex' }), say('Added, but Leo is at Rose\'s that day.')]);
   await agent.ask('add soccer for Leo', []);
   assert.match(claude.calls[0].system, /Custody, next three weeks: .*Mia & Leo at Rose's/);
+  assert.match(claude.calls[0].system, /Never treat that as a problem/);
   const res = JSON.parse(lastToolResults(claude)[0].content);
   assert.match(res.away[0], /Leo is at Rose's that day/);
 });
@@ -198,3 +200,18 @@ test('a Google custody calendar built from overlapping 2-week series reads as on
   assert.equal(lab, "Ivy at Sam's");
 });
 const ev0 = (r) => ({ id: r.uid, ...r, source: 'sync:Ivy custody' });
+
+test('no "who is driving" for kids who are with their other parent that day', () => {
+  const day = '2026-10-13';
+  const evs = [away(day),
+    ev({ id: 'a', title: 'Leo baseball', date: day, time: '17:30', for_ids: ['k2'] }),
+    ev({ id: 'b', title: 'Ivy swim', date: day, time: '16:00', for_ids: ['k3'] }),
+    ev({ id: 'c', title: 'Mia & Ivy dentist', date: day, time: '09:00', for_ids: ['k1', 'k3'] })];
+  const need = evs.filter((e) => d.needsOurDriver(e, evs, m)).map((e) => e.id);
+  assert.deepEqual(need, ['b', 'c'], 'Leo is at Rose\'s; Ivy is home, so her events still need one of us');
+  const w = { members: m, pending: [], ideas: [], tasks: [], events: evs };
+  const msg = tomorrowText(w, day, '');
+  assert.match(msg.body, /Leo baseball \(Leo\) — Leo at Rose's/);
+  assert.doesNotMatch(msg.body, /NO DRIVER Tue Oct 13 5:30pm/);
+  assert.match(msg.body, /NO DRIVER Tue Oct 13 4pm: Ivy swim/);
+});

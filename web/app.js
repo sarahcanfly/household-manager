@@ -84,7 +84,12 @@ const eventById = (id) => state.events.find((e) => e.id === id) || null;
 function weekStartOf(date, off) { const d = new Date(date); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay() + (off || 0) * 7); return d; }
 const weekOffsetFor = (s) => Math.round((weekStartOf(parseYmd(s)) - weekStartOf(new Date())) / 604800000);
 const sortedIdeas = () => state.ideas.slice().sort((a, b) => (a.date && b.date ? a.date.localeCompare(b.date) : a.date ? -1 : b.date ? 1 : 0));
-const needsDriver = (e) => !!e.time && !e.driver && hasKid(e.for || []) && e.date >= todayStr();
+const needsDriver = (e) => {
+  if (!e.time || e.driver || !hasKid(e.for || []) || e.date < todayStr()) return false;
+  const aw = awayKids(e);   // kids with their other parent that day don't need one of us to drive
+  const ks = (e.for || []).filter((id) => member(id)?.kind === 'kid');
+  return !aw || !ks.every((id) => aw.kids.includes(id));
+};
 
 /* custody days (set by the co-parent calendar sync) and to-dos */
 function custodyOn(date) {
@@ -259,7 +264,7 @@ function metaPieces(e) {
   else if (needsDriver(e)) out.push('<span class="drive missing">No driver yet</span>');
   if ((e.withUs || []).length) out.push(`<span class="drive">${esc(names(e.withUs))} with us</span>`);
   const aw = awayKids(e);
-  if (aw) out.push(`<span class="drive missing">${esc(names(aw.kids))} at ${esc(aw.where)} that day</span>`);
+  if (aw) out.push(`<span>${esc(names(aw.kids))} at ${esc(aw.where)}</span>`);
   if (e.where) out.push(`<span>${esc(e.where)}</span>`);
   return out.join('');
 }
@@ -739,7 +744,7 @@ function sheetHtml() {
       names(e.for || []),
       dm ? `${dm.name} driving` : e.driver === 'none' ? 'No driving needed' : needsDriver(e) ? 'No driver yet' : '',
       (e.withUs || []).length ? `${names(e.withUs)} with us` : '',
-      awayKids(e) ? `${names(awayKids(e).kids)} ${awayKids(e).kids.length > 1 ? 'are' : 'is'} at ${awayKids(e).where} that day` : '',
+      awayKids(e) ? `${names(awayKids(e).kids)} at ${awayKids(e).where} that day` : '',
       e.where, e.note,
       /^sync:/.test(e.source || '') ? `From the ${e.source.slice(5)} calendar. Change it there; edits here are replaced on the next sync.` : '',
     ].filter(Boolean);

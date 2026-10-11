@@ -171,7 +171,7 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
   **+ Add → To do**, or tell the agent "remind me to pay the camp deposit by Friday". Anything overdue or due in
   the next three days is in the morning notification; the evening reminder and weekly summary list them too.
 - **Custody days** from the co-parent calendar show as a dashed line under the date ("Aaron & Ozzie at Eli's").
-  A kid event of ours on one of those days is flagged in red, in the reminders, and by the agent.
+  Events on those days note it ("Reid at Jenn's") and never ask who is driving the kids who are away.
 - **Morning notification:** 7am by default, set in Household (or Off). Today's events with their notes, where the
   kids are, and to-dos due soon. Notification only; set `morning` → `email` to true in settings to also email it.
 - **Household:** people, who gets emails, reminder times, theme, notifications on this phone, "check the school calendar now".
