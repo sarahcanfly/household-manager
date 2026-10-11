@@ -18,7 +18,9 @@ async function fetchText(url: string): Promise<string> {
 
 Deno.serve(handler(async (req) => {
   const actor = await requireCronOrUser(req);
-  const store = new RestStore(serviceDb());
+  const db = serviceDb();
+  const store = new RestStore(db);
   const report = await pollSources({ store, claude: callClaude, fetchText, driveText, driveBase64 }, actor);
+  try { await db.rpc('prune_dismissed', {}); } catch { /* housekeeping only */ }
   return json({ ok: true, report });
 }));

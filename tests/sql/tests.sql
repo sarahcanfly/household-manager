@@ -212,6 +212,33 @@ select pg_temp.as_user('stranger@x.com');
 select pg_temp.check((select count(*) from public.event_taste) = 0, 'stranger sees no likes');
 reset role;
 
+-- 5f. Discarded Inbox items stay gone
+delete from public.pending;
+select public.stage_pending(jsonb_build_array(
+  jsonb_build_object('title', 'School Committee', 'date', (public.hm_today() + 5)::text, 'time', '19:00', 'source', 'feed'),
+  jsonb_build_object('title', 'Book fair', 'date', (public.hm_today() + 6)::text, 'source', 'feed'),
+  jsonb_build_object('title', 'Concert', 'date', (public.hm_today() + 7)::text, 'time', '18:00', 'source', 'feed'),
+  jsonb_build_object('title', 'Bake sale', 'date', (public.hm_today() + 8)::text, 'source', 'feed')));
+select pg_temp.as_user('alex@x.com');
+delete from public.pending where title = 'School Committee';                                         -- Discard
+select public.approve_pending(jsonb_build_object('id', (select id from public.pending where title = 'Book fair')));
+select public.shelve_pending(jsonb_build_object('id', (select id from public.pending where title = 'Bake sale')));
+delete from public.events where title = 'Book fair';                                                 -- approved, then deleted from the calendar
+reset role;
+select pg_temp.check((select count(*) from public.dismissed where title = 'School Committee' and time = '19:00') = 1, 'discard is remembered');
+select pg_temp.check((select count(*) from public.dismissed where title = 'Bake sale') = 0, 'shelving is not a discard');
+select pg_temp.check((select count(*) from public.dismissed where title = 'Book fair') = 1, 'deleting a feed event from the calendar is remembered');
+select public.stage_pending(jsonb_build_array(
+  jsonb_build_object('title', 'school committee', 'date', (public.hm_today() + 5)::text, 'time', '19:00'),
+  jsonb_build_object('title', 'Book fair', 'date', (public.hm_today() + 6)::text),
+  jsonb_build_object('title', 'Bake sale', 'date', (public.hm_today() + 8)::text),
+  jsonb_build_object('title', 'School Committee', 'date', (public.hm_today() + 12)::text, 'time', '19:00')));
+select pg_temp.check((select string_agg(title || ' ' || (date - public.hm_today()), ',' order by title) from public.pending) = 'Concert 7,School Committee 12',
+  'next sync skips discarded, deleted and shelved items; a new date still comes through');
+insert into public.events (title, date, source) values ('Typed by hand', public.hm_today() + 3, 'manual');
+delete from public.events where title = 'Typed by hand';
+select pg_temp.check((select count(*) from public.dismissed where title = 'Typed by hand') = 0, 'deleting your own event is not a dismissal');
+
 -- 6. Removing someone from allowed_users locks them out immediately
 delete from public.allowed_users where email = 'jordan@x.com';
 select pg_temp.as_user('jordan@x.com');

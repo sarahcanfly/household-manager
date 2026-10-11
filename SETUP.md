@@ -168,6 +168,8 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
   events always waits for you to tap **Yes, do it**.
 - **Inbox:** paste an email or calendar file, or snap a flyer. Nothing reaches the calendar until you approve it.
   Deadlines it finds (forms due, sign-ups, payments) are marked **To do** and go on the to-do list instead.
+  **Discard** means no for good: that item (same title, date and time) never comes back on a later check. The same
+  goes for deleting something from the calendar that came from a feed or email. The list is the `dismissed` table.
 - **To do:** the list at the top of the Week tab. Tap the circle when it's done (Undo if you slip). Add one with
   **+ Add → To do**, or tell the agent "remind me to pay the camp deposit by Friday". Anything overdue or due in
   the next three days is in the morning notification; the evening reminder and weekly summary list them too.
