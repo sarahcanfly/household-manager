@@ -13,7 +13,7 @@ Deno.serve(handler(async (req) => {
   const db = serviceDb();
   if (b.action === 'key') return json({ publicKey: (await vapidKeys(db)).publicKey });
   if (b.action === 'test') {
-    const r = await pushToHousehold(db, { title: 'Household', body: 'Notifications are on. Reminders will show up here.', url: env('APP_URL'), tag: 'test' }, actor);
+    const r = await pushToHousehold(db, { title: 'Notifications are on', body: 'Your morning note and reminders will show up here.', url: env('APP_URL'), tag: 'test' }, actor);
     return json(r);
   }
   throw new HttpError(400, 'Unknown request.');

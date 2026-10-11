@@ -1,6 +1,6 @@
 // Keeps the app shell available offline and loading instantly. Data always comes
 // fresh from the network; only the app's own files are cached.
-const CACHE = 'household-v10';
+const CACHE = 'household-v11';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'backend.js', 'demo.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -27,7 +27,7 @@ self.addEventListener('fetch', (e) => {
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(d.title || 'Household', {
+  e.waitUntil(self.registration.showNotification(d.title || 'Reminder', {
     body: d.body || '', tag: d.tag || undefined, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url: d.url || './' },
   }));
 });
