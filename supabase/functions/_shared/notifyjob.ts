@@ -7,6 +7,7 @@ import { digestText, morningText, tomorrowText, trimSms, weeklyText } from './no
 import { smsAddress, type Mailer } from './mail.ts';
 import type { Store } from './store.ts';
 import type { PushMessage } from './webpush.ts';
+import type { Texter } from './sms.ts';
 
 export interface NotifyDeps {
   store: Store;
@@ -15,6 +16,8 @@ export interface NotifyDeps {
   appUrl: string;
   /** Sends a notification to every phone that turned them on. */
   push?: (m: PushMessage) => Promise<unknown>;
+  /** Real texts (Twilio). Without it, texts go through carrier email gateways. */
+  text?: Texter;
   now?: Date;
 }
 
@@ -44,7 +47,11 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
     if (emailOn && recipients.length) await d.mail(recipients, msg.subject, msg.body);
     if (s.sms?.enabled && smsOn) {
       for (const r of s.sms.recipients ?? []) {
-        try { await d.mail([smsAddress(r)], 'Household', trimSms(msg.sms, s.sms.max_chars || 600)); }
+        const body = trimSms(msg.sms, s.sms.max_chars || 600);
+        try {
+          if (d.text) await d.text(r.number, body);
+          else if (r.carrier) await d.mail([smsAddress(r)], 'Household', body);
+        }
         catch (e) { await d.store.log('scheduled', 'sms error', `${r.name}: ${(e as Error).message}`); }
       }
     }
@@ -64,7 +71,7 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
   }
   // The morning note is a phone notification; it is emailed too only if morning.email is on.
   if (due('morning', s.morning?.enabled, s.morning?.hour) && (force === 'morning' || await d.claim('morning', z.date))) {
-    await deliver('morning', morningText(w, z.date, d.appUrl), false, !!s.morning?.email);
+    await deliver('morning', morningText(w, z.date, d.appUrl), !!s.sms?.morning, !!s.morning?.email);
   }
   if (due('digest', s.digest?.enabled, s.digest?.hour) && (force === 'digest' || await d.claim('digest', z.date))) {
     await deliver('digest', digestText(w, d.appUrl), !!s.sms?.digest);

@@ -103,5 +103,6 @@ export async function createLiveBackend(cfg) {
     extractFile: (base64, mediaType) => fn('intake', { kind: 'file', base64, media_type: mediaType }),
     checkFeeds: () => fn('poll', {}),
     sendTest: (kind) => fn('notify', { send: kind }),
+    testSms: () => fn('notify', { send: 'sms-test' }),
   };
 }

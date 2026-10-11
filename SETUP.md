@@ -103,9 +103,25 @@ truth and overwrites changes made there.
 notifications**. Nothing to set up here; they arrive at the same times as the emails. (iPhones need iOS 16.4
 or later, and the app must be opened from the Home Screen, not Safari.)
 
-Texts through carrier email addresses (`number@vzwpix.com`) still work for now, but Verizon is shutting that
-down by March 2027 and other carriers already have. They are off unless `sms` → `enabled` is true in the
-settings table.
+**Texts through Twilio** (optional; real text messages to any phone):
+
+1. In Twilio, buy a local number that can send SMS, and register it for texting: **Messaging → Regulatory
+   Compliance → A2P 10DLC → Sole Proprietor** (your name as the brand; Twilio texts a code to your own cell).
+   US carriers block unregistered numbers, and approval takes a few days. While the account is a trial it can only
+   text numbers listed under **Verified Caller IDs**.
+2. Add Edge Function secrets: `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` (Twilio console home → Account Info),
+   and `TWILIO_MESSAGING_SERVICE_SID` (the MG… service the registration created) or `TWILIO_FROM` (the number).
+3. In the SQL Editor, put the numbers on the text list and turn texts on:
+   ```sql
+   update settings set value = value || jsonb_build_object('enabled', true, 'recipients', jsonb_build_array(
+     jsonb_build_object('name', 'Sarah', 'number', '508-555-0101'),
+     jsonb_build_object('name', 'Mikey', 'number', '508-555-0102'))) where key = 'sms';
+   ```
+   `weekly`, `reminders`, `digest` and `morning` in the same setting choose which messages are texted.
+4. In the app: **Household → Send a test text**. Anyone can reply STOP to opt out (and START to come back).
+
+Without Twilio, texts fall back to carrier email addresses (`number@vzwpix.com`, set `carrier` per recipient),
+which Verizon is shutting down by March 2027.
 
 ## 8. Forwarded emails into the Inbox
 

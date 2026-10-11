@@ -683,7 +683,8 @@ function householdHtml() {
     + siriHtml()
     + '<div class="subhead">Tools</div><div class="row">'
     + `<button class="btn" data-act="check-feeds"${busy ? ' disabled' : ''}>Check the school calendar now</button>`
-    + `<button class="btn" data-act="test-weekly"${busy ? ' disabled' : ''}>Email me this week's summary</button></div>`
+    + `<button class="btn" data-act="test-weekly"${busy ? ' disabled' : ''}>Email me this week's summary</button>`
+    + `<button class="btn" data-act="test-sms"${busy ? ' disabled' : ''}>Send a test text</button></div>`
     + `<p class="note" style="margin-top:18px">Signed in as ${esc(me?.email || '')}.</p>`
     + '<button class="btn" data-act="signout">Sign out</button>'
     + '<button class="ghost" data-act="close">Close</button>';
@@ -920,6 +921,18 @@ root.addEventListener('click', async (ev) => {
       await mutate(async () => { const r = await api.sendTest('weekly'); info = r.sent && r.sent.length ? 'Sent this week\'s summary.' : 'Nothing was sent. Add an email address under Emails and reminders first.'; });
       break;
 
+    case 'test-sms':
+      busy = true; render();
+      try {
+        const r = await api.testSms();
+        if (r.error) errMsg = r.error;
+        else {
+          const bad = r.results.filter((x) => !x.ok);
+          info = bad.length ? bad.map((x) => `${x.name}: ${x.error}`).join(' ')
+            : `Test text sent to ${r.results.map((x) => x.name).join(' & ')}.${r.enabled ? '' : ' Reminders by text are still off: set sms → enabled to true in settings.'}`;
+        }
+      } catch (err) { errMsg = err.message; }
+      busy = false; render(); break;
     case 'filter': filterId = id; render(); break;
     case 'view':
       view = t.dataset.v; schedulingId = null;

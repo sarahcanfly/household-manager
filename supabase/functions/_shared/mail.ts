@@ -31,4 +31,4 @@ export const sendMail: Mailer = async (to, subject, text) => {
   throw new Error('No email service set up. Add BREVO_API_KEY (or RESEND_API_KEY) and MAIL_FROM.');
 };
 
-export const smsAddress = (r: SmsRecipient) => `${r.number.replace(/\D/g, '')}@${r.carrier.replace(/^@/, '')}`;
+export const smsAddress = (r: SmsRecipient) => `${r.number.replace(/\D/g, '')}@${(r.carrier ?? '').replace(/^@/, '')}`;

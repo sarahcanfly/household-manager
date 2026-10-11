@@ -110,5 +110,6 @@ export function createDemoBackend() {
     extractFile: () => wait({ found: 0, added: 0, past: 0, dupe: 0, parsed: false }),
     checkFeeds: () => wait({ report: ['Demo mode: no feeds to check.'] }),
     sendTest: () => wait({ sent: [] }),
+    testSms: () => wait({ ok: true, results: [{ name: 'Alex', ok: true }], enabled: true }),
   };
 }

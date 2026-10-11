@@ -81,3 +81,48 @@ test('push can be turned off per message', async () => {
   assert.equal(pushes.length, 0);
   assert.equal(pushFrom('digest', { subject: '2 waiting', sms: '2 events waiting.' }, '').body, '2 events waiting.');
 });
+
+test('Twilio: phone numbers, request shape and plain-words errors', async () => {
+  const sms = await import(B + 'sms.js');
+  assert.equal(sms.e164('(508) 555-0123'), '+15085550123');
+  assert.equal(sms.e164('1-508-555-0123'), '+15085550123');
+  assert.equal(sms.e164('+44 20 7946 0958'), '+442079460958');
+  assert.throws(() => sms.e164('555-0123'), /does not look like a phone number/);
+  process.env.TWILIO_ACCOUNT_SID = 'AC123'; process.env.TWILIO_AUTH_TOKEN = 'tok'; process.env.TWILIO_FROM = '508 555 0000';
+  assert.equal(sms.twilioReady(), true);
+  const calls = [];
+  const ok = async (url, init) => { calls.push({ url, init }); return new Response('{}', { status: 201 }); };
+  await sms.twilioTexter(ok)('508-555-0123', 'Tomorrow: soccer');
+  assert.equal(calls[0].url, 'https://api.twilio.com/2010-04-01/Accounts/AC123/Messages.json');
+  assert.equal(calls[0].init.headers.Authorization, 'Basic ' + Buffer.from('AC123:tok').toString('base64'));
+  const form = new URLSearchParams(calls[0].init.body);
+  assert.deepEqual([form.get('To'), form.get('From'), form.get('Body')], ['+15085550123', '+15085550000', 'Tomorrow: soccer']);
+  const fail = (code) => async () => new Response(JSON.stringify({ code, message: 'raw' }), { status: 400 });
+  await assert.rejects(sms.twilioTexter(fail(21608))('5085550123', 'x'), /trial accounts can only text numbers you have verified/);
+  await assert.rejects(sms.twilioTexter(fail(30034))('5085550123', 'x'), /not registered for texting yet/);
+  process.env.TWILIO_MESSAGING_SERVICE_SID = 'MG9';
+  await sms.twilioTexter(ok)('5085550123', 'x');
+  const f2 = new URLSearchParams(calls[1].init.body);
+  assert.deepEqual([f2.get('MessagingServiceSid'), f2.get('From')], ['MG9', null]);
+  for (const k of ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_MESSAGING_SERVICE_SID']) delete process.env[k];
+  assert.equal(sms.twilioReady(), false);
+});
+
+test('reminder texts go through Twilio when it is set up; one failure does not stop the rest', async () => {
+  const now = new Date('2026-10-12T22:10:00Z');   // 6:10pm New York
+  const store = new MemoryStore({ events: [ev({ title: 'Ortho', date: '2026-10-13', time: '13:30', for_ids: ['k1'], driver: 's1' })],
+    settings: { sms: { enabled: true, weekly: true, reminders: true, digest: false, morning: true, max_chars: 600,
+      recipients: [{ name: 'Sarah', number: '508-555-0101' }, { name: 'Bad', number: '1' }, { name: 'Mikey', number: '508-555-0102', carrier: 'vzwpix.com' }] } } });
+  const texts = [], mails = [];
+  const text = async (to, body) => { if (to === '1') throw new Error('nope'); texts.push({ to, body }); };
+  await runNotify({ store, now, appUrl: '', claim: async () => true, mail: async (to) => mails.push(to), text });
+  assert.deepEqual(texts.map((t) => t.to), ['508-555-0101', '508-555-0102']);
+  assert.match(texts[0].body, /^Tomorrow:\n1:30pm Ortho/);
+  assert.equal(mails.length, 0, 'no carrier gateway emails when Twilio is used');
+  assert.ok(store.logs.some((l) => l.action === 'sms error' && /Bad/.test(l.detail)));
+  // morning texts when sms.morning is on
+  texts.length = 0;
+  store.events.push(ev({ title: 'Dentist', date: '2026-10-13', time: '09:30', for_ids: ['s1'] }));
+  await runNotify({ store, now: new Date('2026-10-13T11:05:00Z'), appUrl: '', claim: async () => true, mail: async () => {}, text });
+  assert.equal(texts.length, 2); assert.match(texts[0].body, /9:30am Dentist/);
+});

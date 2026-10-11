@@ -8,7 +8,7 @@ import type { ExistingRow, FeedRow, SyncFeedConfig, SyncStore } from './feedsync
 
 export type Feed = SyncFeedConfig;
 export interface DocSource { id: string; name: string; type?: 'doc' | 'pdf'; hint?: string }
-export interface SmsRecipient { name: string; number: string; carrier: string }
+export interface SmsRecipient { name: string; number: string; carrier?: string }   // carrier only matters without Twilio
 export interface Settings {
   timezone: string;
   weekly: { enabled: boolean; day: string; hour: number };
@@ -16,7 +16,7 @@ export interface Settings {
   digest: { enabled: boolean; hour: number };
   morning: { enabled: boolean; hour: number; email: boolean };
   notify: string[];
-  sms: { enabled: boolean; weekly: boolean; reminders: boolean; digest: boolean; max_chars: number; recipients: SmsRecipient[] };
+  sms: { enabled: boolean; weekly: boolean; reminders: boolean; digest: boolean; morning?: boolean; max_chars: number; recipients: SmsRecipient[] };
   push: { weekly: boolean; reminders: boolean; digest: boolean };
   feeds: Feed[];
   docs: DocSource[];
