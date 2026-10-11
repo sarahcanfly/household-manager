@@ -154,3 +154,47 @@ test('two co-parent calendars on the same day stay separate', () => {
   const lines = d.awayClashes(evs, m).map((c) => d.awayLine(c, m));
   assert.deepEqual(lines, ["Tue Oct 13 4pm Swim: Leo is at Rose's that day", "Tue Oct 13 4pm Swim: Ivy is at Sam's that day"]);
 });
+
+test('a Google custody calendar built from overlapping 2-week series reads as one clean 2-2-3 rotation', async () => {
+  const { parseIcs, applyRules } = await import(B + 'ics.js');
+  // Same rules, dates and quirks as the real calendar (alarm blocks with their own UID, "&" titles,
+  // a timed multi-day stay). Ivy stands in for Reid, Alex for Mikey, Sam for Jenn.
+  const alarm = (id) => `BEGIN:VALARM\nACTION:AUDIO\nTRIGGER:-PT15H\nUID:${id}\nDESCRIPTION:ignore me\nEND:VALARM`;
+  const ev = (uid, title, s, e, extra = '') => `BEGIN:VEVENT\nDTSTART;VALUE=DATE:${s}\nDTEND;VALUE=DATE:${e}\n${extra}UID:${uid}@google.com\nSTATUS:CONFIRMED\nSUMMARY:${title}\n${alarm('ALARM-' + uid)}\nEND:VEVENT`;
+  const ics = ['BEGIN:VCALENDAR', 'X-WR-TIMEZONE:America/New_York',
+    ev('10datf', 'Ivy @ Alex', '20231227', '20231229', 'RRULE:FREQ=WEEKLY;WKST=SU;INTERVAL=2;BYDAY=WE\nEXDATE;VALUE=DATE:20260805\n'),
+    ev('srnf3i', 'Ivy & Sam', '20250423', '20250425', 'RRULE:FREQ=WEEKLY;INTERVAL=2\nEXDATE;VALUE=DATE:20260909\n'),
+    ev('eiq8pe', 'Ivy @ Alex', '20240412', '20240415', 'RRULE:FREQ=WEEKLY;INTERVAL=2\nEXDATE;VALUE=DATE:20260731\n'),
+    ev('fk301l', 'Ivy @ Sam', '20240415', '20240417', 'RRULE:FREQ=WEEKLY;INTERVAL=2\nEXDATE;VALUE=DATE:20260803\n'),
+    ev('5gfejc', 'Ivy @ Sam', '20231229', '20240101', 'RRULE:FREQ=WEEKLY;WKST=SU;INTERVAL=2;BYDAY=FR\n'),
+    ev('el0cps', 'Ivy @ Alex', '20240701', '20240703', 'RRULE:FREQ=DAILY;INTERVAL=14\n'),
+    // one weekend of the series edited on its own (renamed); a Mon–Tue occurrence cut to Monday only
+    ev('eiq8pe', 'Ivy @ Alex in Maine', '20261023', '20261026', 'RECURRENCE-ID;VALUE=DATE:20261023\n'),
+    ev('fk301l', 'Ivy @ Sam', '20261026', '20261027', 'RECURRENCE-ID;VALUE=DATE:20261026\n'),
+    'BEGIN:VEVENT\nDTSTART:20261106T140000Z\nDTEND:20261109T150000Z\nUID:stay1@google.com\nSUMMARY:Ivy @ Sam\nEND:VEVENT',
+    'BEGIN:VEVENT\nDTSTART:20261019T230000Z\nDTEND:20261020T030000Z\nUID:gig@google.com\nSUMMARY:Alex Concert\nEND:VEVENT',
+    'BEGIN:VEVENT\nDTSTART;VALUE=DATE:20261020\nDTEND;VALUE=DATE:20261021\nUID:dog@google.com\nSUMMARY:Griswold @ Sam\nEND:VEVENT',
+    'END:VCALENDAR'].join('\n');
+  const feed = { name: 'Ivy custody', url: 'x', mode: 'sync', default_for: ['Ivy'],
+    exclude: ['/^(griswold|j[aä]e?ger) @/'], tag: [{ match: '/^alex\\b/', who: ['Alex'] }],
+    custody: [{ match: '/^ivy (@|&|and|with) sam/', with_us: [], where: "Sam's" }, { match: '/^(ivy (@|and) alex|alex @ ivy)/', with_us: ['Ivy'], where: "Alex's" }] };
+  const items = applyRules(parseIcs(ics, 'America/New_York', '2026-10-11', 40), feed, m);
+  assert.ok(items.every((i) => !/ALARM/.test(i.uid)), 'alarm UIDs never become event ids');
+  const rows = desiredRows(items, feed, m);
+  const byDate = {};
+  for (const r of rows) if (r.custody) (byDate[r.date] = byDate[r.date] || []).push(r.custody);
+  const days = Array.from({ length: 16 }, (_, i) => d.addDays('2026-10-12', i));
+  assert.deepEqual(days.map((x) => byDate[x]), [
+    ["Sam's"], ["Sam's"], ["Alex's"], ["Alex's"], ["Sam's"], ["Sam's"], ["Sam's"],          // Mon Oct 12 – Sun Oct 18
+    ["Alex's"], ["Alex's"], ["Sam's"], ["Sam's"], ["Alex's"], ["Alex's"], ["Alex's"],      // Mon Oct 19 – Sun Oct 25
+    ["Sam's"], undefined]);                                                                 // the edited Mon–Tue now covers Monday only
+  assert.equal(rows.find((r) => r.date === '2026-10-23' && r.custody).title, 'Ivy @ Alex in Maine');
+  // Timed Fri 10am – Mon 11am stay: Fri, Sat, Sun (Monday ends before noon)
+  assert.deepEqual(rows.filter((r) => r.uid.startsWith('stay1')).map((r) => [r.date, r.time]), [['2026-11-06', ''], ['2026-11-07', ''], ['2026-11-08', '']]);
+  const gig = rows.find((r) => r.title === 'Alex Concert');
+  assert.deepEqual([gig.time, gig.for_ids, gig.custody], ['19:00', ['s1'], '']);
+  assert.equal(rows.some((r) => /Griswold/.test(r.title)), false);
+  const lab = d.custodyLabel(d.custodyDays(rows.map((r) => ev0(r))).get('2026-10-12'), m);
+  assert.equal(lab, "Ivy at Sam's");
+});
+const ev0 = (r) => ({ id: r.uid, ...r, source: 'sync:Ivy custody' });

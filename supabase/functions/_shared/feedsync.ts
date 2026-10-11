@@ -9,12 +9,13 @@
 //   "tag": [{ "match": "Kid1", "who": ["Kid1"] }],
 //   "custody": [{ "match": "@Home's", "with_us": ["Kid1", "Kid2"] },
 //               { "match": "@Other's", "with_us": [] }],   // custody days: no driving needed
+//   (match is plain text or a /pattern/; add "where": "Jenn's" when the title has no "@ Name")
 //   "horizon_days": 120 }
 
 import { addDays, type Member } from './domain.ts';
-import type { IcsItem, FeedRules } from './ics.ts';
+import { matches, type IcsItem, type FeedRules } from './ics.ts';
 
-export interface CustodyRule { match: string; with_us: string[] }
+export interface CustodyRule { match: string; with_us: string[]; where?: string }
 export interface SyncFeedConfig extends FeedRules {
   name: string; url: string; mode?: 'sync' | 'approve';
   default_for?: string[]; custody?: CustodyRule[]; horizon_days?: number;
@@ -40,14 +41,14 @@ export function desiredRows(items: IcsItem[], feed: SyncFeedConfig, members: Mem
   for (const it of items) {
     if (seen.has(it.uid)) continue;
     seen.add(it.uid);
-    const custody = (feed.custody ?? []).find((c) => lower(it.title).includes(lower(c.match)));
+    const custody = (feed.custody ?? []).find((c) => matches(c.match, it.title));
     const for_ids = it.for_ids.length ? it.for_ids : fallback;
     out.push({
       uid: it.uid, title: it.title, date: it.date, time: it.time, for_ids,
       with_us: custody ? idsFor(custody.with_us, members) : [],
       place: it.place, note: it.note,
       driver: custody ? 'none' : '',
-      custody: custody ? custodyPlace(it.title) : '',
+      custody: custody ? (custody.where?.trim().slice(0, 40) || custodyPlace(it.title)) : '',
     });
   }
   return out;

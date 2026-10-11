@@ -113,12 +113,17 @@ export function looksLikeIcs(text: string): boolean {
  */
 export function parseIcs(text: string, tz: string, today: string, horizonDays = 28): IcsItem[] {
   const raw: Prop[][] = [];
-  let cur: Prop[] | null = null;
+  let cur: Prop[] | null = null, nested = 0;
   for (const line0 of unfold(text)) {
     const line = line0.trimEnd();
-    if (/^BEGIN:VEVENT$/i.test(line)) { cur = []; continue; }
+    if (/^BEGIN:VEVENT$/i.test(line)) { cur = []; nested = 0; continue; }
     if (/^END:VEVENT$/i.test(line)) { if (cur) raw.push(cur); cur = null; continue; }
-    if (cur) { const p = parseLine(line); if (p) cur.push(p); }
+    if (!cur) continue;
+    // Alarms and other blocks inside an event carry their own UID/DESCRIPTION lines: skip them.
+    if (/^BEGIN:/i.test(line)) { nested++; continue; }
+    if (/^END:/i.test(line)) { nested = Math.max(0, nested - 1); continue; }
+    if (nested) continue;
+    const p = parseLine(line); if (p) cur.push(p);
   }
   // A changed single occurrence arrives as its own event with a RECURRENCE-ID; the series must skip that date.
   const moved = new Map<string, Set<string>>();
@@ -145,9 +150,14 @@ function eventFrom(props: Prop[], tz: string, today: string, horizonDays: number
 
   let span = 1;
   const end = get('DTEND');
-  if (!local.time && end) {
-    const e = toLocal(end, tz);
-    if (e) span = Math.min(31, Math.max(1, daysBetween(local.date, e.date)));
+  const e = end ? toLocal(end, tz) : null;
+  if (!local.time && e) span = Math.min(31, Math.max(1, daysBetween(local.date, e.date)));
+  else if (local.time && e && e.date > local.date) {
+    // A timed stay of a day or more ("Fri 10am – Mon 11am") becomes all-day entries, like a
+    // multi-day all-day event: each day it covers, counting the last day only if it ends after noon.
+    const days = daysBetween(local.date, e.date) + (e.time >= '12:00' ? 1 : 0);
+    const hours = daysBetween(local.date, e.date) * 24 + (Number(e.time.slice(0, 2)) - Number(local.time.slice(0, 2)));
+    if (hours >= 24 && days >= 1) { span = Math.min(31, days); local.time = ''; }
   }
 
   const ex = new Set<string>(get('RECURRENCE-ID') ? [] : (moved.get(uid) ?? []));
@@ -169,7 +179,7 @@ function eventFrom(props: Prop[], tz: string, today: string, horizonDays: number
 }
 
 /** A rule matches as plain text (any case), or as a pattern when written like /pattern/. */
-function matches(rule: string, title: string): boolean {
+export function matches(rule: string, title: string): boolean {
   const m = rule.match(/^\/(.+)\/$/);
   if (m) { try { return new RegExp(m[1], 'i').test(title); } catch { return false; } }
   return title.toLowerCase().includes(rule.toLowerCase());
