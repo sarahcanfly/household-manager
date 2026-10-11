@@ -88,22 +88,27 @@ const needsDriver = (e) => !!e.time && !e.driver && hasKid(e.for || []) && e.dat
 
 /* custody days (set by the co-parent calendar sync) and to-dos */
 function custodyOn(date) {
-  const away = [];
-  let where = '', ev = null;
+  const groups = [], away = [];
   state.events.forEach((e) => {
     if (e.date !== date || !e.custody) return;
     const gone = (e.for || []).filter((id) => !(e.withUs || []).includes(id));
-    if (gone.length) { gone.forEach((id) => { if (!away.includes(id)) away.push(id); }); where = e.custody; ev = e; }
+    if (!gone.length) return;
+    let g = groups.find((x) => x.where === e.custody);
+    if (!g) { g = { kids: [], where: e.custody, ev: e }; groups.push(g); }
+    gone.forEach((id) => { if (!g.kids.includes(id)) g.kids.push(id); if (!away.includes(id)) away.push(id); });
   });
-  return away.length ? { away, where, ev } : null;
+  return groups.length ? { away, groups } : null;
 }
 /** Kids of ours booked on a day they are at the other house (their own synced events don't count). */
 function awayKids(e) {
   if (!e.time || e.custody || /^sync:/.test(e.source || '')) return null;
   const c = custodyOn(e.date);
   if (!c) return null;
-  const kidsAway = (e.for || []).filter((id) => c.away.includes(id));
-  return kidsAway.length ? { kids: kidsAway, where: c.where } : null;
+  for (const g of c.groups) {
+    const kidsAway = (e.for || []).filter((id) => g.kids.includes(id));
+    if (kidsAway.length) return { kids: kidsAway, where: g.where };
+  }
+  return null;
 }
 const openTasks = () => (state.tasks || []).filter((t) => !t.done).sort((a, b) => a.due.localeCompare(b.due));
 function dueText(due) {
@@ -270,10 +275,11 @@ function weekHtml() {
     const key = ymd(d);
     const evs = state.events.filter((e) => e.date === key && !e.custody && visible(e)).sort((x, y) => (x.time || '00:00').localeCompare(y.time || '00:00'));
     const cust = custodyOn(key);
-    const showCust = cust && (!filterId || cust.away.includes(filterId));
+    const custGroups = cust ? cust.groups.filter((g) => !filterId || g.kids.includes(filterId)) : [];
+    const showCust = custGroups.length > 0;
     body += `<section class="day${key === today ? ' is-today' : ''}${key < today ? ' is-past' : ''}${evs.length || showCust ? '' : ' empty'}" aria-label="${DAYS[d.getDay()]} ${d.getDate()}">`
       + `<div class="dayhead"><span class="dnum">${d.getDate()}</span><span class="dname">${key === today ? 'Today' : DAYS[d.getDay()].slice(0, 3)}</span></div><div class="dayevents">`;
-    if (showCust) body += `<button class="away" data-act="event" data-id="${cust.ev.id}">${esc(names(cust.away))} at ${esc(cust.where)}</button>`;
+    custGroups.forEach((g) => { body += `<button class="away" data-act="event" data-id="${g.ev.id}">${esc(names(g.kids))} at ${esc(g.where)}</button>`; });
     if (!evs.length && !showCust) body += '<div class="none">Nothing yet</div>';
     evs.forEach((e) => {
       body += `<button class="ev" data-act="event" data-id="${e.id}" data-flash="${e.id}"><span class="bar" style="${barStyle(e.for || [])}"></span>`
@@ -325,7 +331,7 @@ function monthHtml() {
     const key = `${prefix}-${String(dn).padStart(2, '0')}`, evs = byDay[key] || [];
     const mc = custodyOn(key);
     grid += `<div class="mcell${key === today ? ' now' : ''}${mc ? ' isaway' : ''}"><div class="mnum">${dn}</div>`
-      + (mc ? `<div class="mcust">${esc(mc.where)}</div>` : '')
+      + (mc ? mc.groups.map((g) => `<div class="mcust">${esc(g.where)}</div>`).join('') : '')
       + evs.slice(0, 3).map((e) => `<div class="mev"><span class="dot" style="${barStyle(e.for || [])}"></span><span>${e.time ? pretty(e.time, true) + ' ' : ''}${esc(e.title)}</span></div>`).join('')
       + (evs.length > 3 ? `<div class="mmore">+${evs.length - 3} more</div>` : '') + '</div>';
   }

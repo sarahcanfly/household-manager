@@ -184,25 +184,32 @@ export const needsDriver = (e: Ev, members: Member[]) =>
 
 /* ---------- custody days ---------- */
 
-export interface CustodyDay { away: string[]; where: string }
+/** Kids at another house on one date. Several co-parent calendars can each add a group. */
+export interface CustodyGroup { kids: string[]; where: string }
+export interface CustodyDay { away: string[]; groups: CustodyGroup[] }
 
-/** Which kids are at the other house on each date, from the co-parent calendar's custody events. */
+/** Which kids are at another house on each date, from the co-parent calendars' custody events. */
 export function custodyDays(events: Ev[]): Map<string, CustodyDay> {
   const out = new Map<string, CustodyDay>();
   for (const e of events) {
     if (!e.custody) continue;
     const away = e.for_ids.filter((id) => !e.with_us.includes(id));
     if (!away.length) continue;
-    const cur = out.get(e.date) ?? { away: [], where: e.custody };
-    cur.away = [...new Set([...cur.away, ...away])];
-    out.set(e.date, cur);
+    const day = out.get(e.date) ?? { away: [], groups: [] };
+    let g = day.groups.find((x) => x.where === e.custody);
+    if (!g) { g = { kids: [], where: e.custody }; day.groups.push(g); }
+    for (const id of away) {
+      if (!g.kids.includes(id)) g.kids.push(id);
+      if (!day.away.includes(id)) day.away.push(id);
+    }
+    out.set(e.date, day);
   }
   return out;
 }
 
-/** "Aaron & Ozzie at Eli's" for one day, or '' when everyone is home. */
+/** "Aaron & Ozzie at Eli's; Reid at Jenn's" for one day, or '' when everyone is home. */
 export function custodyLabel(day: CustodyDay | undefined, members: Member[]): string {
-  return day && day.away.length ? `${namesOf(day.away, members).join(' & ')} at ${day.where}` : '';
+  return day ? day.groups.map((g) => `${namesOf(g.kids, members).join(' & ')} at ${g.where}`).join('; ') : '';
 }
 
 /** Consecutive days with the same arrangement, from `from` for `days` days: "Mon Oct 12 – Wed Oct 14: A & O at Eli's". */
@@ -222,7 +229,7 @@ export function custodyRanges(events: Ev[], from: string, days: number, members:
 export interface AwayClash { e: Ev; kids: string[]; where: string }
 
 /**
- * Timed events of ours for a kid on a day that kid is at the other house. Events
+ * Timed events of ours for a kid on a day that kid is at another house. Events
  * from synced calendars are the other parent's own, so they never count.
  */
 export function awayClashes(events: Ev[], members: Member[]): AwayClash[] {
@@ -231,8 +238,10 @@ export function awayClashes(events: Ev[], members: Member[]): AwayClash[] {
     if (!e.time || e.custody || e.source.startsWith('sync:')) continue;
     const day = map.get(e.date);
     if (!day) continue;
-    const kids = e.for_ids.filter((id) => day.away.includes(id));
-    if (kids.length) out.push({ e, kids, where: day.where });
+    for (const g of day.groups) {
+      const kids = e.for_ids.filter((id) => g.kids.includes(id));
+      if (kids.length) out.push({ e, kids, where: g.where });
+    }
   }
   return out;
 }

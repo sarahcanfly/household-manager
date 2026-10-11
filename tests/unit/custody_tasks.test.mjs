@@ -138,3 +138,19 @@ test('agent hears about custody: in its instructions and when adding on an away 
   const res = JSON.parse(lastToolResults(claude)[0].content);
   assert.match(res.away[0], /Leo is at Rose's that day/);
 });
+
+test('two co-parent calendars on the same day stay separate', () => {
+  // Mia & Leo with Rose, Ivy with Sam (stand-ins for Aaron & Ozzie with Eli, Reid with Jenn)
+  const ivyAway = (date) => ev({ title: "Ivy @Sam's", date, for_ids: ['k3'], driver: 'none', with_us: [], custody: "Sam's", source: 'sync:Ivy custody' });
+  const ivyHome = (date) => ev({ title: "Ivy @Alex's", date, for_ids: ['k3'], driver: 'none', with_us: ['k3'], custody: "Alex's", source: 'sync:Ivy custody' });
+  const evs = [away('2026-10-13'), ivyAway('2026-10-13'), home('2026-10-14'), ivyAway('2026-10-14'), away('2026-10-15'), ivyHome('2026-10-15'),
+    ev({ id: 'swim', title: 'Swim', date: '2026-10-13', time: '16:00', for_ids: ['k3', 'k2'] })];
+  const map = d.custodyDays(evs);
+  assert.equal(d.custodyLabel(map.get('2026-10-13'), m), "Mia & Leo at Rose's; Ivy at Sam's");
+  assert.equal(d.custodyLabel(map.get('2026-10-14'), m), "Ivy at Sam's");
+  assert.equal(d.custodyLabel(map.get('2026-10-15'), m), "Mia & Leo at Rose's");
+  assert.deepEqual(d.custodyRanges(evs, '2026-10-13', 3, m), [
+    "Tue Oct 13: Mia & Leo at Rose's; Ivy at Sam's", "Wed Oct 14: Ivy at Sam's", "Thu Oct 15: Mia & Leo at Rose's"]);
+  const lines = d.awayClashes(evs, m).map((c) => d.awayLine(c, m));
+  assert.deepEqual(lines, ["Tue Oct 13 4pm Swim: Leo is at Rose's that day", "Tue Oct 13 4pm Swim: Ivy is at Sam's that day"]);
+});
