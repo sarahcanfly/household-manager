@@ -175,6 +175,9 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
 - **Morning notification:** 7am by default, set in Household (or Off). Today's events with their notes, where the
   kids are, and to-dos due soon. Notification only; set `morning` → `email` to true in settings to also email it.
 - **Household:** people, who gets emails, reminder times, theme, notifications on this phone, "check the school calendar now".
+- **Around town this week:** the weekly summary email ends with a few local events found by Claude with web search
+  (with links). Change the area, distance and interests in `local_events` in the settings table, or set `enabled` to
+  false. Web search has to be allowed for your organization in the Claude Console; it costs about a cent a search.
 - Which messages also come as notifications: `push` in the settings table (`weekly`, `reminders`, `digest`).
 - Feeds, documents and text recipients are edited in Supabase → **Table Editor → settings**.
 - A shared calendar you trust (for example a co-parenting calendar) can sync straight onto the

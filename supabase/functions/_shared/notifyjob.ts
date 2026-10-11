@@ -16,6 +16,8 @@ export interface NotifyDeps {
   appUrl: string;
   /** Sends a notification to every phone that turned them on. */
   push?: (m: PushMessage) => Promise<unknown>;
+  /** "Around town" suggestions for the weekly email; failures leave the section out. */
+  around?: (start: string) => Promise<string[]>;
   /** Real texts (Twilio). Without it, texts go through carrier email gateways. */
   text?: Texter;
   now?: Date;
@@ -64,7 +66,12 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
 
   if (due('weekly', s.weekly?.enabled, s.weekly?.hour, z.weekday.toUpperCase() === String(s.weekly?.day).toUpperCase())
       && (force === 'weekly' || await d.claim('weekly', z.date))) {
-    await deliver('weekly', weeklyText(w, z.date, d.appUrl), !!s.sms?.weekly);
+    let around: string[] = [];
+    if (d.around) {
+      try { around = await d.around(z.date); }
+      catch (e) { await d.store.log('scheduled', 'local events error', (e as Error).message); }
+    }
+    await deliver('weekly', weeklyText(w, z.date, d.appUrl, around), !!s.sms?.weekly);
   }
   if (due('reminder', s.reminders?.enabled, s.reminders?.hour) && (force === 'reminder' || await d.claim('reminder', z.date))) {
     await deliver('reminder', tomorrowText(w, addDays(z.date, 1), d.appUrl), !!s.sms?.reminders);

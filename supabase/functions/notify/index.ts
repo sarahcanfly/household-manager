@@ -10,6 +10,8 @@ import { sendMail } from '../_shared/mail.ts';
 import { runNotify, type NotifyKind } from '../_shared/notifyjob.ts';
 import { pushToHousehold } from '../_shared/pushdb.ts';
 import { twilioReady, twilioTexter } from '../_shared/sms.ts';
+import { findLocalEvents, localLines } from '../_shared/localevents.ts';
+import { callClaude } from '../_shared/claude.ts';
 
 Deno.serve(handler(async (req) => {
   const actor = await requireCronOrUser(req);
@@ -36,6 +38,12 @@ Deno.serve(handler(async (req) => {
     // A test from the app goes only to the person who asked for it.
     push: (m) => pushToHousehold(db, m, force ? actor : undefined),
     text: twilioReady() ? twilioTexter() : undefined,
+    around: async (start) => {
+      const s = await store.settings();
+      if (!s.local_events?.enabled || !env('ANTHROPIC_API_KEY')) return [];
+      const w = await store.world();
+      return localLines(await findLocalEvents(callClaude, { ...s.local_events, area: s.local_events.area || 'Framingham, MA' }, w.members, start, s.timezone));
+    },
     claim: async (kind, period) => (await db.req<unknown[]>('POST', 'notify_sent', { kind, period }, 'resolution=ignore-duplicates,return=representation')).length > 0,
   }, force);
   return json({ ok: true, sent });

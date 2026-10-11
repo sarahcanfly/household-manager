@@ -5,6 +5,7 @@ import { normEvent, normIdea, normMember, normPending, normTask, addDays, type E
 import { eq, type Rest } from './db.ts';
 import type { FeedRules } from './ics.ts';
 import type { ExistingRow, FeedRow, SyncFeedConfig, SyncStore } from './feedsync.ts';
+import { DEFAULT_LOCAL, type LocalSettings } from './localevents.ts';
 
 export type Feed = SyncFeedConfig;
 export interface DocSource { id: string; name: string; type?: 'doc' | 'pdf'; hint?: string }
@@ -15,6 +16,7 @@ export interface Settings {
   reminders: { enabled: boolean; hour: number };
   digest: { enabled: boolean; hour: number };
   morning: { enabled: boolean; hour: number; email: boolean };
+  local_events: LocalSettings;
   notify: string[];
   sms: { enabled: boolean; weekly: boolean; reminders: boolean; digest: boolean; morning?: boolean; max_chars: number; recipients: SmsRecipient[] };
   push: { weekly: boolean; reminders: boolean; digest: boolean };
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reminders: { enabled: true, hour: 18 },
   digest: { enabled: true, hour: 19 },
   morning: { enabled: true, hour: 7, email: false },
+  local_events: DEFAULT_LOCAL,
   notify: [],
   sms: { enabled: false, weekly: true, reminders: true, digest: false, max_chars: 600, recipients: [] },
   push: { weekly: true, reminders: true, digest: true },

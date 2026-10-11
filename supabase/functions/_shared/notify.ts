@@ -33,7 +33,7 @@ function attention(events: Ev[], w: World): string[] {
   return out;
 }
 
-export function weeklyText(w: World, start: string, appUrl: string): Message {
+export function weeklyText(w: World, start: string, appUrl: string, around: string[] = []): Message {
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const inWeek = w.events.filter((e) => days.includes(e.date));
   const custody = custodyDays(w.events);
@@ -48,6 +48,7 @@ export function weeklyText(w: World, start: string, appUrl: string): Message {
     lines.push(`${weekdayOf(d)} ${prettyDate(d).slice(4)}${c ? ` — ${c}` : ''}`);
     lines.push(...(evs.length ? evs.map((e) => eventLine(e, w)) : ['  nothing scheduled']));
   }
+  if (around.length) lines.push('', ...around);
   if (appUrl) lines.push('', `Open: ${appUrl}`);
   const sms = [`Week of ${prettyDate(start)}:`, ...days.flatMap((d) =>
     onDay(w, d).map((e) => `${weekdayOf(d).slice(0, 3)} ${prettyTime(e.time)} ${e.title}`)),
