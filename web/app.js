@@ -932,7 +932,7 @@ root.addEventListener('click', async (ev) => {
       await mutate(async () => { const r = await api.checkFeeds(); info = (r.report || []).join(' ') || 'Checked.'; }, () => { sheet = null; view = 'inbox'; });
       break;
     case 'test-weekly':
-      await mutate(async () => { const r = await api.sendTest('weekly'); info = r.sent && r.sent.length ? 'Sent this week\'s summary.' : 'Nothing was sent. Add an email address under Emails and reminders first.'; });
+      await mutate(async () => { const r = await api.sendTest('weekly'); info = r.sent && r.sent.length ? 'Sent this week\'s summary to you only.' : 'Nothing was sent.'; });
       break;
 
     case 'test-sms':

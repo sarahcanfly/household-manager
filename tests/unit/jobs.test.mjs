@@ -265,3 +265,13 @@ test('service account JWT is RS256-signed and verifies with the public key', asy
   const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', kp.publicKey, Buffer.from(s, 'base64url'), new TextEncoder().encode(`${h}.${c}`));
   assert.ok(ok);
 });
+
+test('a test from the app emails only the person who asked, and texts nobody', async () => {
+  const now = new Date('2026-10-11T21:30:00Z');
+  const store = new MemoryStore({ events: [ev({ title: 'Soccer', date: '2026-10-13', time: '17:30', for_ids: ['k2'], driver: 's1' })],
+    settings: { notify: ['sarah@x.com', 'mikey@x.com'], sms: { enabled: true, weekly: true, reminders: true, digest: false, max_chars: 600, recipients: [{ name: 'M', number: '5085550101' }] } } });
+  const mails = [], texts = [];
+  await runNotify({ store, now, appUrl: '', claim: async () => true, mail: async (to) => mails.push(to), text: async (to) => texts.push(to), onlyTo: 'sarah@x.com' }, 'weekly');
+  assert.deepEqual(mails, [['sarah@x.com']]);
+  assert.deepEqual(texts, []);
+});

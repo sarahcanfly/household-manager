@@ -37,6 +37,7 @@ Deno.serve(handler(async (req) => {
     store, mail: sendMail, appUrl: env('APP_URL'),
     // A test from the app goes only to the person who asked for it.
     push: (m) => pushToHousehold(db, m, force ? actor : undefined),
+    onlyTo: force ? actor : undefined,
     text: twilioReady() ? twilioTexter() : undefined,
     personal: async (start, recipients) => {
       const s = await store.settings();

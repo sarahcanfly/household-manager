@@ -20,6 +20,8 @@ export interface NotifyDeps {
   around?: (start: string) => Promise<string[]>;
   /** Extra sections for one person's copy of the weekly email, by email address. */
   personal?: (start: string, recipients: string[]) => Promise<Record<string, string[]>>;
+  /** A test from the app: email only this person, and send no texts. */
+  onlyTo?: string;
   /** Real texts (Twilio). Without it, texts go through carrier email gateways. */
   text?: Texter;
   now?: Date;
@@ -39,7 +41,7 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
   const z = zoned(d.now ?? new Date(), s.timezone);
   const w = await d.store.world();
   const sent: string[] = [];
-  const recipients = s.notify ?? [];
+  const recipients = d.onlyTo ? [d.onlyTo] : (s.notify ?? []);
 
   const deliver = async (kind: NotifyKind, msg: { subject: string; body: string; sms: string } | null, smsOn: boolean, emailOn = true,
     bodyFor?: (email: string) => string | null) => {
@@ -56,7 +58,7 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
       if (shared.length) await d.mail(shared, msg.subject, msg.body);
       for (const r of own) await d.mail([r], msg.subject, bodyFor!(r)!);
     }
-    if (s.sms?.enabled && smsOn) {
+    if (s.sms?.enabled && smsOn && !d.onlyTo) {
       for (const r of s.sms.recipients ?? []) {
         const body = trimSms(msg.sms, s.sms.max_chars || 600);
         try {
