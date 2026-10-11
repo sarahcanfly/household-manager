@@ -20,14 +20,17 @@ export function members() {
   ];
 }
 
+export const task = (o) => ({ id: 't' + Math.random().toString(36).slice(2, 7), title: 'Form', due: plus(2), for_ids: [], note: '', done: false, source: 'manual', ...o });
 export const ev = (o) => ({ id: 'e' + Math.random().toString(36).slice(2, 7), title: 'Thing', date: plus(3), time: '', for_ids: [], driver: '', with_us: [], place: '', note: '', source: 'manual', ...o });
 
 export class MemoryStore {
-  constructor({ events = [], pending = [], ideas = [], settings = {} } = {}) {
-    this.m = members(); this.events = events; this.pending = pending; this.ideas = ideas;
+  constructor({ events = [], pending = [], ideas = [], tasks = [], settings = {} } = {}) {
+    this.m = members(); this.events = events; this.pending = pending; this.ideas = ideas; this.tasks = tasks;
     this.s = { ...DEFAULT_SETTINGS, ...settings }; this.tokens = new Map(); this.logs = []; this.n = 0;
   }
-  async world() { return structuredClone({ members: this.m, events: this.events, pending: this.pending, ideas: this.ideas }); }
+  async world() { return structuredClone({ members: this.m, events: this.events, pending: this.pending, ideas: this.ideas, tasks: this.tasks }); }
+  async insertTask(row) { const t = { id: 't' + (++this.n), done: false, ...row }; delete t.created_by; this.tasks.push(t); return structuredClone(t); }
+  async updateTask(id, patch) { const t = this.tasks.find((x) => x.id === id); if (!t) return null; Object.assign(t, patch); return structuredClone(t); }
   async settings() { return structuredClone(this.s); }
   async insertEvent(row) { const e = ev({ ...row, id: 'n' + (++this.n) }); delete e.created_by; this.events.push(e); return structuredClone(e); }
   async updateEvent(id, patch) { const e = this.events.find((x) => x.id === id); if (!e) return null; Object.assign(e, patch); return structuredClone(e); }

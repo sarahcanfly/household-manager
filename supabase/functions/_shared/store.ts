@@ -1,7 +1,7 @@
 // Everything the functions read and write, behind one interface so the agent
 // and the jobs can be tested against an in-memory copy.
 
-import { normEvent, normIdea, normMember, normPending, type Ev, type Idea, type World } from './domain.ts';
+import { normEvent, normIdea, normMember, normPending, normTask, addDays, type Ev, type Idea, type Task, type World } from './domain.ts';
 import { eq, type Rest } from './db.ts';
 import type { FeedRules } from './ics.ts';
 import type { ExistingRow, FeedRow, SyncFeedConfig, SyncStore } from './feedsync.ts';
@@ -14,6 +14,7 @@ export interface Settings {
   weekly: { enabled: boolean; day: string; hour: number };
   reminders: { enabled: boolean; hour: number };
   digest: { enabled: boolean; hour: number };
+  morning: { enabled: boolean; hour: number; email: boolean };
   notify: string[];
   sms: { enabled: boolean; weekly: boolean; reminders: boolean; digest: boolean; max_chars: number; recipients: SmsRecipient[] };
   push: { weekly: boolean; reminders: boolean; digest: boolean };
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   weekly: { enabled: true, day: 'MONDAY', hour: 7 },
   reminders: { enabled: true, hour: 18 },
   digest: { enabled: true, hour: 19 },
+  morning: { enabled: true, hour: 7, email: false },
   notify: [],
   sms: { enabled: false, weekly: true, reminders: true, digest: false, max_chars: 600, recipients: [] },
   push: { weekly: true, reminders: true, digest: true },
@@ -41,8 +43,10 @@ export interface EventRow {
 
 export interface StageRow {
   title: string; date: string; time: string; for_ids: string[]; place: string; note: string;
-  confidence: 'high' | 'low'; source: string; source_ref: string;
+  confidence: 'high' | 'low'; source: string; source_ref: string; kind?: 'event' | 'task';
 }
+export interface TaskRow { title: string; due: string; for_ids: string[]; note: string; source: string; created_by?: string }
+export type TaskPatch = Partial<Pick<Task, 'title' | 'due' | 'for_ids' | 'note' | 'done'>>;
 export interface StageResult { added: number; past: number; dupe: number }
 
 export interface Store extends SyncStore {
@@ -52,6 +56,8 @@ export interface Store extends SyncStore {
   updateEvent(id: string, patch: Partial<EventRow>): Promise<Ev | null>;
   deleteEvent(id: string): Promise<Ev | null>;
   insertIdea(row: Omit<Idea, 'id'>): Promise<Idea>;
+  insertTask(row: TaskRow): Promise<Task>;
+  updateTask(id: string, patch: TaskPatch): Promise<Task | null>;
   putToken(action: 'update' | 'delete', args: Record<string, unknown>, summary: string, by: string): Promise<string>;
   redeemToken(token: string): Promise<{ action: 'update' | 'delete'; args: Record<string, unknown> } | null>;
   stage(rows: StageRow[]): Promise<StageResult>;
@@ -70,13 +76,16 @@ export class RestStore implements Store {
   constructor(private db: Rest) {}
 
   async world(): Promise<World> {
-    const [m, e, p, i] = await Promise.all([
+    // Open to-dos, plus ones due in the last two months so "did we send the form?" can be answered.
+    const recent = addDays(new Date().toISOString().slice(0, 10), -60);
+    const [m, e, p, i, t] = await Promise.all([
       this.db.select('members', 'select=*&order=sort.asc'),
       this.db.select('events', 'select=*&order=date.asc,time.asc.nullsfirst'),
       this.db.select('pending', 'select=*&order=date.asc'),
       this.db.select('ideas', 'select=*&order=created_at.asc'),
+      this.db.select('tasks', `select=*&or=(done.is.false,due.gte.${recent})&order=due.asc`),
     ]);
-    return { members: m.map(normMember), events: e.map(normEvent), pending: p.map(normPending), ideas: i.map(normIdea) };
+    return { members: m.map(normMember), events: e.map(normEvent), pending: p.map(normPending), ideas: i.map(normIdea), tasks: t.map(normTask) };
   }
 
   async settings(): Promise<Settings> {
@@ -97,6 +106,13 @@ export class RestStore implements Store {
   }
   async insertIdea(row: Omit<Idea, 'id'>) {
     return normIdea((await this.db.insert('ideas', { ...row, date: row.date || null, time: row.time || null }))[0]);
+  }
+  async insertTask(row: TaskRow) { return normTask((await this.db.insert('tasks', row))[0]); }
+  async updateTask(id: string, patch: TaskPatch) {
+    const body: Record<string, unknown> = { ...patch };
+    if ('done' in patch) body.done_at = patch.done ? new Date().toISOString() : null;
+    const r = await this.db.update('tasks', `id=${eq(id)}`, body);
+    return r[0] ? normTask(r[0]) : null;
   }
   async putToken(action: 'update' | 'delete', args: Record<string, unknown>, summary: string, by: string) {
     const r = await this.db.insert<{ token: string }>('agent_pending', { action, args, summary, created_by: by });
@@ -119,7 +135,7 @@ export class RestStore implements Store {
     // One request, so the calendar sync is triggered once rather than once per event.
     await this.db.req('POST', 'events', rows.map((r) => ({
       title: r.title, date: r.date, time: r.time || null, for_ids: r.for_ids, with_us: r.with_us,
-      driver: r.driver || null, place: r.place, note: r.note, source: `sync:${feed}`, created_by: feed,
+      driver: r.driver || null, place: r.place, note: r.note, source: `sync:${feed}`, created_by: feed, custody: r.custody ?? '',
       feed, feed_uid: r.uid,
     })), 'return=minimal');
   }

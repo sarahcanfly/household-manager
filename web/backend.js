@@ -4,8 +4,10 @@
 const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 
 const hm = (t) => (t ? String(t).slice(0, 5) : '');
-const toEvent = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.time), for: r.for_ids || [], driver: r.driver || '', withUs: r.with_us || [], where: r.place || '', note: r.note || '', source: r.source || '' });
-const toPending = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.time), for: r.for_ids || [], where: r.place || '', note: r.note || '', source: r.source, sourceRef: r.source_ref || '', confidence: r.confidence });
+const toEvent = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.time), for: r.for_ids || [], driver: r.driver || '', withUs: r.with_us || [], where: r.place || '', note: r.note || '', source: r.source || '', custody: r.custody || '' });
+const toPending = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.time), for: r.for_ids || [], where: r.place || '', note: r.note || '', source: r.source, sourceRef: r.source_ref || '', confidence: r.confidence, kind: r.kind || 'event' });
+const toTask = (r) => ({ id: r.id, title: r.title, due: r.due, for: r.for_ids || [], note: r.note || '', done: !!r.done, source: r.source || '' });
+const taskRow = (t) => ({ title: t.title, due: t.due, for_ids: t.for || [], note: t.note || '' });
 const toIdea = (r) => ({ id: r.id, title: r.title, date: r.date || '', time: hm(r.time), for: r.for_ids || [], cost: r.cost || '', link: r.link || '', note: r.note || '' });
 const eventRow = (e) => ({ title: e.title, date: e.date, time: e.time || null, for_ids: e.for || [], driver: e.driver || null, with_us: e.withUs || [], place: e.where || '', note: e.note || '' });
 const pendingPayload = (p) => ({ id: p.id, title: p.title, date: p.date, time: p.time || '', for_ids: p.for || [], driver: p.driver || '', with_us: p.withUs || [], place: p.where || '', note: p.note || '' });
@@ -35,13 +37,15 @@ export async function createLiveBackend(cfg) {
     async isAllowed() { return !!ok(await sb.rpc('am_i_household')); },
 
     async load() {
-      const [m, e, p, i] = await Promise.all([
+      const [m, e, p, i, t, s] = await Promise.all([
         sb.from('members').select('*').order('sort'),
         sb.from('events').select('*').order('date').order('time', { nullsFirst: true }),
         sb.from('pending').select('*').order('date'),
         sb.from('ideas').select('*').order('created_at'),
+        sb.from('tasks').select('*').eq('done', false).order('due'),
+        sb.from('settings').select('value').eq('key', 'morning').maybeSingle(),
       ]);
-      return { members: ok(m), events: ok(e).map(toEvent), pending: ok(p).map(toPending), ideas: ok(i).map(toIdea) };
+      return { members: ok(m), events: ok(e).map(toEvent), pending: ok(p).map(toPending), ideas: ok(i).map(toIdea), tasks: ok(t).map(toTask), morning: (ok(s) || {}).value || null };
     },
     async settings() {
       const rows = ok(await sb.from('settings').select('key,value'));
@@ -55,7 +59,7 @@ export async function createLiveBackend(cfg) {
       let t = null;
       const fire = () => { clearTimeout(t); t = setTimeout(cb, 400); };
       const ch = sb.channel('household');
-      for (const table of ['events', 'pending', 'ideas', 'members']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, fire);
+      for (const table of ['events', 'pending', 'ideas', 'members', 'tasks']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, fire);
       ch.subscribe();
       return () => sb.removeChannel(ch);
     },
@@ -69,6 +73,11 @@ export async function createLiveBackend(cfg) {
     async ideaToEvent(ideaId, eventId, date, time) { ok(await sb.rpc('idea_to_event', { idea_id: ideaId, event_id: eventId, d: date, t: time || '' })); },
     async restoreIdea(idea, removeEvent) { ok(await sb.rpc('restore_idea', { it: ideaJson(idea), remove_event: removeEvent || null })); },
     async addIdea(it) { ok(await sb.from('ideas').insert({ id: it.id, title: it.title, date: it.date || null, time: it.time || null, for_ids: it.for || [], cost: it.cost || '', link: it.link || '', note: it.note || '' })); },
+    async addTask(t) { ok(await sb.from('tasks').insert({ id: t.id, ...taskRow(t), source: 'manual' })); },
+    async updateTask(t) { ok(await sb.from('tasks').update(taskRow(t)).eq('id', t.id)); },
+    async setTaskDone(id, done) { ok(await sb.from('tasks').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id)); },
+    async deleteTask(id) { ok(await sb.from('tasks').delete().eq('id', id)); },
+    async restoreTask(t) { ok(await sb.from('tasks').upsert({ id: t.id, ...taskRow(t), done: false, done_at: null, source: t.source || 'manual' })); },
     async deleteIdea(id) { ok(await sb.from('ideas').delete().eq('id', id)); },
     async approve(p) { ok(await sb.rpc('approve_pending', { p: pendingPayload(p) })); },
     async approveMany(ps) { return ok(await sb.rpc('approve_many', { ps: ps.map(pendingPayload) })); },

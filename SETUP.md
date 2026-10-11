@@ -150,6 +150,14 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
   "when did Mia last see the orthodontist?" Tap the microphone to talk. Deleting and changing existing
   events always waits for you to tap **Yes, do it**.
 - **Inbox:** paste an email or calendar file, or snap a flyer. Nothing reaches the calendar until you approve it.
+  Deadlines it finds (forms due, sign-ups, payments) are marked **To do** and go on the to-do list instead.
+- **To do:** the list at the top of the Week tab. Tap the circle when it's done (Undo if you slip). Add one with
+  **+ Add → To do**, or tell the agent "remind me to pay the camp deposit by Friday". Anything overdue or due in
+  the next three days is in the morning notification; the evening reminder and weekly summary list them too.
+- **Custody days** from the co-parent calendar show as a dashed line under the date ("Aaron & Ozzie at Eli's").
+  A kid event of ours on one of those days is flagged in red, in the reminders, and by the agent.
+- **Morning notification:** 7am by default, set in Household (or Off). Today's events with their notes, where the
+  kids are, and to-dos due soon. Notification only; set `morning` → `email` to true in settings to also email it.
 - **Household:** people, who gets emails, reminder times, theme, notifications on this phone, "check the school calendar now".
 - Which messages also come as notifications: `push` in the settings table (`weekly`, `reminders`, `digest`).
 - Feeds, documents and text recipients are edited in Supabase → **Table Editor → settings**.

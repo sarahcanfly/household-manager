@@ -7,13 +7,17 @@ export interface Ev {
   id: string; title: string; date: string; time: string;          // time '' = all day, else 'HH:MM'
   for_ids: string[]; driver: string; with_us: string[];            // driver '' undecided, 'none', or member id
   place: string; note: string; source: string;
+  custody?: string;                                                // on custody days from the co-parent calendar: whose house, e.g. "Eli's"
 }
 export interface Pending {
   id: string; title: string; date: string; time: string; for_ids: string[];
   place: string; note: string; source: string; source_ref: string; confidence: 'high' | 'low';
+  kind?: 'event' | 'task';
 }
+/** Something to do by a date (a form, a sign-up, a payment). Not on the calendar. */
+export interface Task { id: string; title: string; due: string; for_ids: string[]; note: string; done: boolean; source: string }
 export interface Idea { id: string; title: string; date: string; time: string; for_ids: string[]; cost: string; link: string; note: string }
-export interface World { members: Member[]; events: Ev[]; pending: Pending[]; ideas: Idea[] }
+export interface World { members: Member[]; events: Ev[]; pending: Pending[]; ideas: Idea[]; tasks?: Task[] }
 
 export const DEFAULT_DURATION_MIN = 60;
 export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -32,7 +36,13 @@ export function normEvent(r: Record<string, unknown>): Ev {
   return {
     id: str(r.id), title: str(r.title), date: str(r.date).slice(0, 10), time: hhmm(r.time),
     for_ids: arr(r.for_ids), driver: str(r.driver), with_us: arr(r.with_us),
-    place: str(r.place), note: str(r.note), source: str(r.source),
+    place: str(r.place), note: str(r.note), source: str(r.source), custody: str(r.custody),
+  };
+}
+export function normTask(r: Record<string, unknown>): Task {
+  return {
+    id: str(r.id), title: str(r.title), due: str(r.due).slice(0, 10), for_ids: arr(r.for_ids),
+    note: str(r.note), done: r.done === true, source: str(r.source),
   };
 }
 export function normPending(r: Record<string, unknown>): Pending {
@@ -40,6 +50,7 @@ export function normPending(r: Record<string, unknown>): Pending {
     id: str(r.id), title: str(r.title), date: str(r.date).slice(0, 10), time: hhmm(r.time),
     for_ids: arr(r.for_ids), place: str(r.place), note: str(r.note), source: str(r.source),
     source_ref: str(r.source_ref), confidence: r.confidence === 'low' ? 'low' : 'high',
+    kind: r.kind === 'task' ? 'task' : 'event',
   };
 }
 export function normIdea(r: Record<string, unknown>): Idea {
@@ -170,6 +181,79 @@ export const conflictLine = (c: Conflict) =>
 /** A kid's timed event that nobody has been assigned to drive to. */
 export const needsDriver = (e: Ev, members: Member[]) =>
   !!e.time && !e.driver && hasKid(e.for_ids, members);
+
+/* ---------- custody days ---------- */
+
+export interface CustodyDay { away: string[]; where: string }
+
+/** Which kids are at the other house on each date, from the co-parent calendar's custody events. */
+export function custodyDays(events: Ev[]): Map<string, CustodyDay> {
+  const out = new Map<string, CustodyDay>();
+  for (const e of events) {
+    if (!e.custody) continue;
+    const away = e.for_ids.filter((id) => !e.with_us.includes(id));
+    if (!away.length) continue;
+    const cur = out.get(e.date) ?? { away: [], where: e.custody };
+    cur.away = [...new Set([...cur.away, ...away])];
+    out.set(e.date, cur);
+  }
+  return out;
+}
+
+/** "Aaron & Ozzie at Eli's" for one day, or '' when everyone is home. */
+export function custodyLabel(day: CustodyDay | undefined, members: Member[]): string {
+  return day && day.away.length ? `${namesOf(day.away, members).join(' & ')} at ${day.where}` : '';
+}
+
+/** Consecutive days with the same arrangement, from `from` for `days` days: "Mon Oct 12 – Wed Oct 14: A & O at Eli's". */
+export function custodyRanges(events: Ev[], from: string, days: number, members: Member[]): string[] {
+  const map = custodyDays(events), out: string[] = [];
+  let start = '', prev = '', label = '';
+  const flush = () => { if (label) out.push(`${prettyDate(start)}${prev !== start ? ` – ${prettyDate(prev)}` : ''}: ${label}`); };
+  for (let i = 0; i < days; i++) {
+    const d = addDays(from, i), l = custodyLabel(map.get(d), members);
+    if (l !== label) { flush(); start = d; label = l; }
+    prev = d;
+  }
+  flush();
+  return out;
+}
+
+export interface AwayClash { e: Ev; kids: string[]; where: string }
+
+/**
+ * Timed events of ours for a kid on a day that kid is at the other house. Events
+ * from synced calendars are the other parent's own, so they never count.
+ */
+export function awayClashes(events: Ev[], members: Member[]): AwayClash[] {
+  const map = custodyDays(events), out: AwayClash[] = [];
+  for (const e of events) {
+    if (!e.time || e.custody || e.source.startsWith('sync:')) continue;
+    const day = map.get(e.date);
+    if (!day) continue;
+    const kids = e.for_ids.filter((id) => day.away.includes(id));
+    if (kids.length) out.push({ e, kids, where: day.where });
+  }
+  return out;
+}
+
+export const awayLine = (c: AwayClash, members: Member[]) =>
+  `${prettyDate(c.e.date)} ${prettyTime(c.e.time)} ${c.e.title}: ${namesOf(c.kids, members).join(' & ')} ${c.kids.length > 1 ? 'are' : 'is'} at ${c.where} that day`;
+
+/* ---------- to-dos ---------- */
+
+/** "overdue", "today", "tomorrow", or "Wed Oct 14". */
+export function dueLabel(due: string, today: string): string {
+  if (due < today) return 'overdue';
+  if (due === today) return 'today';
+  if (due === addDays(today, 1)) return 'tomorrow';
+  return prettyDate(due);
+}
+
+/** Open to-dos due by `until` (inclusive), overdue first. */
+export function tasksDueBy(tasks: Task[] | undefined, until: string): Task[] {
+  return (tasks ?? []).filter((t) => !t.done && t.due <= until).sort((a, b) => a.due.localeCompare(b.due));
+}
 
 /* ---------- validating what the agent asks for ---------- */
 

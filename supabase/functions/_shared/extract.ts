@@ -9,6 +9,7 @@ export type ExtractKind = 'text' | 'doc' | 'photo' | 'pdf' | 'email';
 export interface Extracted {
   title: string; date: string; time: string; place: string; note: string;
   for_ids: string[]; confidence: 'high' | 'low';
+  kind: 'event' | 'task';
 }
 
 export function rosterLine(members: Member[]): string {
@@ -28,7 +29,11 @@ export function buildPrompt(kind: ExtractKind, o: { today: string; weekday: stri
     + 'Respond with ONLY a JSON array. No prose, no markdown fences. Each element:\n'
     + '{"title": short label, "date": "YYYY-MM-DD", "time": "HH:MM" in 24-hour form or "" for all day, '
     + '"where": string or "", "for": array of member ids this concerns (empty array if unclear), '
-    + '"note": string or "", "confidence": "high" or "low"}\n\n'
+    + '"note": string or "", "confidence": "high" or "low", "kind": "event" or "deadline"}\n\n'
+    + 'kind: "event" is something that happens at a time and place (a game, an appointment, a concert, a day off). '
+    + '"deadline" is something someone has to do by a date: a form or permission slip due, a payment due, an RSVP, '
+    + 'registration opening or closing, a sign-up. For a deadline, "date" is the day it is due (or the day registration '
+    + 'opens), "time" is "", and the title says what to do ("Return field trip form", "Register for spring soccer").\n\n'
     + 'Rules: resolve relative dates ("next Tuesday") against today. Skip anything whose date cannot be '
     + `determined. For a recurring series, emit each occurrence for the next ${o.maxWeeks} weeks only. `
     + 'Match names to member ids where the match is clear; otherwise leave "for" empty. '
@@ -60,10 +65,11 @@ export function parseExtraction(text: string, members: Member[]): Extracted[] {
     .map((x) => ({
       title: String(x.title).slice(0, 120),
       date: String(x.date),
-      time: /^\d{2}:\d{2}$/.test(String(x.time ?? '')) ? String(x.time) : '',
+      time: x.kind !== 'deadline' && /^\d{2}:\d{2}$/.test(String(x.time ?? '')) ? String(x.time) : '',
       place: x.where ? String(x.where).slice(0, 120) : '',
       note: x.note ? String(x.note).slice(0, 500) : '',
       confidence: x.confidence === 'low' ? 'low' : 'high',
+      kind: x.kind === 'deadline' || x.kind === 'task' ? 'task' : 'event',
       for_ids: Array.isArray(x.for) ? x.for.map(String).filter((id) => ids.has(id)) : [],
     }));
 }

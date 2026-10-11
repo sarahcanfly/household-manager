@@ -147,7 +147,7 @@ test('weekly summary goes out once at the right local hour, with texts', async (
   const n = notifier(store, now);
   assert.deepEqual(await n.run(), ['weekly']);
   assert.equal(n.mails[0].to.length, 2);
-  assert.match(n.mails[0].text, /NO DRIVER/); assert.match(n.mails[0].text, /1 suggested event is waiting/);
+  assert.match(n.mails[0].text, /NO DRIVER/); assert.match(n.mails[0].text, /1 suggested item is waiting/);
   assert.equal(n.mails[1].to[0], '3475550101@vzwpix.com');
   assert.deepEqual(await n.run(), [], 'not sent twice in the same hour');
   const other = notifier(store, new Date('2026-10-12T15:10:00Z'));

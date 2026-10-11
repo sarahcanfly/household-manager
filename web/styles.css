@@ -139,6 +139,20 @@ a { color: var(--accent); }
 .evmeta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.85rem; color: var(--muted); margin-top: 2px; padding-left: 62px; }
 .drive { color: var(--ink); }
 .drive.missing { color: var(--warn); font-weight: 700; }
+.away { text-align: left; border: 1px dashed var(--line); background: none; border-radius: 10px; padding: 7px 12px; font-size: 0.88rem; color: var(--muted); }
+
+/* ---------- to-dos ---------- */
+.todo { background: var(--surface); border-radius: 12px; padding: 10px 14px 6px; margin: 0 0 14px; }
+.todohead { font: 600 0.78rem/1 var(--body, inherit); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 2px 0 6px; }
+.trow { display: grid; grid-template-columns: 30px 1fr; align-items: start; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.trow:first-of-type { border-top: 0; }
+.tick { width: 22px; height: 22px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--muted); background: none; padding: 0; }
+.tick:hover { border-color: var(--accent); background: var(--soft); }
+.tbody { border: 0; background: none; padding: 0; text-align: left; min-width: 0; color: inherit; }
+.ttitle { display: block; font-weight: 700; overflow-wrap: anywhere; }
+.tmeta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 0.85rem; color: var(--muted); }
+.todo .linkish { margin: 4px 0 6px; }
+.kindtag { display: inline-block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 
 /* ---------- month ---------- */
 .mgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 18px; }
@@ -146,6 +160,8 @@ a { color: var(--accent); }
 .mcell { background: var(--surface); min-height: 64px; padding: 4px; border-radius: 6px; overflow: hidden; }
 .mcell.off { background: transparent; }
 .mcell.now { box-shadow: inset 0 0 0 2px var(--accent); }
+.mcell.isaway { background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--soft) 6px 8px); }
+.mcust { font-size: 0.68rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mnum { font-size: 0.8rem; font-weight: 700; }
 .mev { display: flex; gap: 3px; align-items: center; font-size: 0.68rem; line-height: 1.2; white-space: nowrap; overflow: hidden; }
 .mev .dot { width: 6px; height: 6px; }

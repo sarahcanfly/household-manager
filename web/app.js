@@ -21,6 +21,7 @@ let api = null, me = null;
 let state = null, view = 'week', weekOffset = 0, monthOffset = 0, filterId = '';
 let sheet = null, addKind = 'event', schedulingId = null, flashId = null;
 let undo = null, busy = false, errMsg = '', info = '', settings = null;
+let tasksOpen = false;
 let draft = null, memberDraft = null, setupDraft = null, settingsDraft = null;
 let intakeMode = 'text', intakeText = '', fileData = '', fileType = '', filePreview = '', fileName = '';
 let parsing = false, parseNote = '', edits = {}, picked = {};
@@ -85,6 +86,36 @@ const weekOffsetFor = (s) => Math.round((weekStartOf(parseYmd(s)) - weekStartOf(
 const sortedIdeas = () => state.ideas.slice().sort((a, b) => (a.date && b.date ? a.date.localeCompare(b.date) : a.date ? -1 : b.date ? 1 : 0));
 const needsDriver = (e) => !!e.time && !e.driver && hasKid(e.for || []) && e.date >= todayStr();
 
+/* custody days (set by the co-parent calendar sync) and to-dos */
+function custodyOn(date) {
+  const away = [];
+  let where = '', ev = null;
+  state.events.forEach((e) => {
+    if (e.date !== date || !e.custody) return;
+    const gone = (e.for || []).filter((id) => !(e.withUs || []).includes(id));
+    if (gone.length) { gone.forEach((id) => { if (!away.includes(id)) away.push(id); }); where = e.custody; ev = e; }
+  });
+  return away.length ? { away, where, ev } : null;
+}
+/** Kids of ours booked on a day they are at the other house (their own synced events don't count). */
+function awayKids(e) {
+  if (!e.time || e.custody || /^sync:/.test(e.source || '')) return null;
+  const c = custodyOn(e.date);
+  if (!c) return null;
+  const kidsAway = (e.for || []).filter((id) => c.away.includes(id));
+  return kidsAway.length ? { kids: kidsAway, where: c.where } : null;
+}
+const openTasks = () => (state.tasks || []).filter((t) => !t.done).sort((a, b) => a.due.localeCompare(b.due));
+function dueText(due) {
+  const today = todayStr();
+  if (due < today) return 'Overdue';
+  if (due === today) return 'Due today';
+  const tm = new Date(); tm.setDate(tm.getDate() + 1);
+  if (due === ymd(tm)) return 'Due tomorrow';
+  const d = parseYmd(due);
+  return `Due ${DAYS[d.getDay()].slice(0, 3)} ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
 /* ---------- data ---------- */
 
 async function reload() {
@@ -133,7 +164,7 @@ function render() {
   root.innerHTML = ''
     + `<div class="top"><h1 class="house">${esc(title)}</h1>`
     + `<div class="dateline"><span>${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>`
-    + `<span>${state.events.filter((e) => e.date === todayStr()).length || 'Nothing'} on today${state.pending.length ? `, ${state.pending.length} waiting` : ''}</span></div><div class="topbtns">`
+    + `<span>${state.events.filter((e) => e.date === todayStr() && !e.custody).length || 'Nothing'} on today${state.pending.length ? `, ${state.pending.length} waiting` : ''}</span></div><div class="topbtns">`
     + `<button class="linkish" data-act="household">Household</button>`
     + `<button class="linkish" data-act="refresh">${busy ? 'Saving…' : 'Refresh'}</button></div></div>`
     + (api.mode === 'demo' ? '<div class="banner">Demo with sample data. Nothing is saved.</div>' : '')
@@ -222,6 +253,8 @@ function metaPieces(e) {
   if (e.driver && e.driver !== 'none') { const dm = member(e.driver); if (dm) out.push(`<span class="drive">${esc(dm.name)} driving</span>`); }
   else if (needsDriver(e)) out.push('<span class="drive missing">No driver yet</span>');
   if ((e.withUs || []).length) out.push(`<span class="drive">${esc(names(e.withUs))} with us</span>`);
+  const aw = awayKids(e);
+  if (aw) out.push(`<span class="drive missing">${esc(names(aw.kids))} at ${esc(aw.where)} that day</span>`);
   if (e.where) out.push(`<span>${esc(e.where)}</span>`);
   return out.join('');
 }
@@ -235,10 +268,13 @@ function weekHtml() {
   for (let i = 0; i < 7; i++) {
     const d = new Date(start); d.setDate(d.getDate() + i);
     const key = ymd(d);
-    const evs = state.events.filter((e) => e.date === key && visible(e)).sort((x, y) => (x.time || '00:00').localeCompare(y.time || '00:00'));
-    body += `<section class="day${key === today ? ' is-today' : ''}${key < today ? ' is-past' : ''}${evs.length ? '' : ' empty'}" aria-label="${DAYS[d.getDay()]} ${d.getDate()}">`
+    const evs = state.events.filter((e) => e.date === key && !e.custody && visible(e)).sort((x, y) => (x.time || '00:00').localeCompare(y.time || '00:00'));
+    const cust = custodyOn(key);
+    const showCust = cust && (!filterId || cust.away.includes(filterId));
+    body += `<section class="day${key === today ? ' is-today' : ''}${key < today ? ' is-past' : ''}${evs.length || showCust ? '' : ' empty'}" aria-label="${DAYS[d.getDay()]} ${d.getDate()}">`
       + `<div class="dayhead"><span class="dnum">${d.getDate()}</span><span class="dname">${key === today ? 'Today' : DAYS[d.getDay()].slice(0, 3)}</span></div><div class="dayevents">`;
-    if (!evs.length) body += '<div class="none">Nothing yet</div>';
+    if (showCust) body += `<button class="away" data-act="event" data-id="${cust.ev.id}">${esc(names(cust.away))} at ${esc(cust.where)}</button>`;
+    if (!evs.length && !showCust) body += '<div class="none">Nothing yet</div>';
     evs.forEach((e) => {
       body += `<button class="ev" data-act="event" data-id="${e.id}" data-flash="${e.id}"><span class="bar" style="${barStyle(e.for || [])}"></span>`
         + `<span class="evbody"><span class="evtop"><span class="evtime">${e.time ? pretty(e.time) : 'All day'}</span><span class="evtitle">${esc(e.title)}</span></span>`
@@ -246,11 +282,29 @@ function weekHtml() {
     });
     body += '</div></section>';
   }
-  return filterHtml()
+  return filterHtml() + tasksHtml()
     + `<div class="weekbar"><span class="range">${range}</span><span class="nav">`
     + '<button data-act="week" data-d="-1" aria-label="Previous week">‹</button>'
     + '<button data-act="week" data-d="0">Today</button>'
     + '<button data-act="week" data-d="1" aria-label="Next week">›</button></span></div>' + body;
+}
+
+function tasksHtml() {
+  const all = openTasks().filter((t) => !filterId || (t.for || []).includes(filterId));
+  if (!all.length) return '';
+  const soon = new Date(); soon.setDate(soon.getDate() + 14);
+  const cutoff = ymd(soon);
+  const shown = tasksOpen ? all : all.filter((t) => t.due <= cutoff).slice(0, 5);
+  const hidden = all.length - shown.length;
+  return '<div class="todo"><div class="todohead">To do</div>'
+    + shown.map((t) => {
+      const late = t.due < todayStr();
+      return `<div class="trow"><button class="tick" data-act="task-done" data-id="${t.id}" aria-label="Done: ${esc(t.title)}"${busy ? ' disabled' : ''}></button>`
+        + `<button class="tbody" data-act="task" data-id="${t.id}"><span class="ttitle">${esc(t.title)}</span>`
+        + `<span class="tmeta"><span class="${late ? 'drive missing' : ''}">${esc(dueText(t.due))}</span>${(t.for || []).length ? `<span>${esc(names(t.for))}</span>` : ''}</span></button></div>`;
+    }).join('')
+    + (hidden > 0 ? `<button class="linkish" data-act="tasks-more">${hidden} more</button>` : tasksOpen && all.length > 5 ? '<button class="linkish" data-act="tasks-more">Show fewer</button>' : '')
+    + '</div>';
 }
 
 function monthHtml() {
@@ -260,7 +314,7 @@ function monthHtml() {
   const daysIn = new Date(y, m + 1, 0).getDate(), startDow = new Date(y, m, 1).getDay(), today = todayStr();
   const label = `${FULLMONTHS[m]} ${y}`;
   const byDay = {};
-  state.events.forEach((e) => { if (String(e.date).slice(0, 7) === prefix && visible(e)) (byDay[e.date] = byDay[e.date] || []).push(e); });
+  state.events.forEach((e) => { if (String(e.date).slice(0, 7) === prefix && !e.custody && visible(e)) (byDay[e.date] = byDay[e.date] || []).push(e); });
   Object.values(byDay).forEach((l) => l.sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00')));
 
   let grid = '<div class="mgrid">' + ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => `<div class="mdow">${d}</div>`).join('');
@@ -269,7 +323,9 @@ function monthHtml() {
     const dn = i - startDow + 1;
     if (dn < 1 || dn > daysIn) { grid += '<div class="mcell off"></div>'; continue; }
     const key = `${prefix}-${String(dn).padStart(2, '0')}`, evs = byDay[key] || [];
-    grid += `<div class="mcell${key === today ? ' now' : ''}"><div class="mnum">${dn}</div>`
+    const mc = custodyOn(key);
+    grid += `<div class="mcell${key === today ? ' now' : ''}${mc ? ' isaway' : ''}"><div class="mnum">${dn}</div>`
+      + (mc ? `<div class="mcust">${esc(mc.where)}</div>` : '')
       + evs.slice(0, 3).map((e) => `<div class="mev"><span class="dot" style="${barStyle(e.for || [])}"></span><span>${e.time ? pretty(e.time, true) + ' ' : ''}${esc(e.title)}</span></div>`).join('')
       + (evs.length > 3 ? `<div class="mmore">+${evs.length - 3} more</div>` : '') + '</div>';
   }
@@ -346,16 +402,20 @@ function inboxHtml() {
     const e = edits[p.id] || {};
     const forIds = e.for || p.for || [];
     const isPicked = !!picked[p.id];
+    const isTask = p.kind === 'task';
     h += `<div class="card${isPicked ? ' picked' : ''}">`
       + `<button class="pick" data-act="pick" data-id="${p.id}" aria-pressed="${isPicked}">${isPicked ? 'Selected' : 'Select'}</button>`
+      + (isTask ? '<div class="kindtag">To do</div>' : '')
       + `<input type="text" data-pe="title" data-id="${p.id}" value="${esc(e.title ?? p.title)}" aria-label="Title">`
-      + `<div class="stagerow"><input type="date" data-pe="date" data-id="${p.id}" value="${esc(e.date ?? p.date)}" aria-label="Date"><input type="time" data-pe="time" data-id="${p.id}" value="${esc(e.time ?? p.time)}" aria-label="Time"></div>`
+      + (isTask
+        ? `<div class="stagerow"><div><label class="label">Due</label><input type="date" data-pe="date" data-id="${p.id}" value="${esc(e.date ?? p.date)}" aria-label="Due date"></div></div>`
+        : `<div class="stagerow"><input type="date" data-pe="date" data-id="${p.id}" value="${esc(e.date ?? p.date)}" aria-label="Date"><input type="time" data-pe="time" data-id="${p.id}" value="${esc(e.time ?? p.time)}" aria-label="Time"></div>`)
       + (p.where ? `<div class="cardmeta">${esc(p.where)}</div>` : '')
       + (p.note ? `<div class="cardmeta">${esc(p.note)}</div>` : '')
       + `<div class="cardmeta">${sourceLine(p)}</div>`
       + '<div class="chips" style="margin-top:10px">' + roster().map((m) => `<button class="chip" data-act="pfor" data-id="${p.id}" data-mid="${m.id}" aria-pressed="${forIds.includes(m.id)}"><span class="dot" style="background:${colorOf(m.id)}"></span>${esc(m.name)}</button>`).join('') + '</div>'
-      + (hasKid(forIds) ? driverSelectHtml(`pd-${p.id}`, e.driver || '') : '')
-      + `<div class="row"><button class="btn go" data-act="approve" data-id="${p.id}"${busy ? ' disabled' : ''}>Add to the week</button>`
+      + (hasKid(forIds) && !isTask ? driverSelectHtml(`pd-${p.id}`, e.driver || '') : '')
+      + `<div class="row"><button class="btn go" data-act="approve" data-id="${p.id}"${busy ? ' disabled' : ''}>${isTask ? 'Add to to-dos' : 'Add to the week'}</button>`
       + `<button class="btn" data-act="shelve-pending" data-id="${p.id}"${busy ? ' disabled' : ''}>To the shelf</button>`
       + `<button class="btn del" data-act="reject" data-id="${p.id}"${busy ? ' disabled' : ''}>Discard</button></div></div>`;
   });
@@ -404,7 +464,7 @@ function captureIntake() { const el = document.getElementById('etext'); if (el) 
 
 function pendingPayload(p) {
   const e = edits[p.id] || {};
-  return { id: p.id, title: e.title ?? p.title, date: e.date ?? p.date, time: e.time ?? p.time, for: e.for || p.for || [], driver: e.driver || '', withUs: e.withUs || [], where: p.where, note: p.note };
+  return { id: p.id, kind: p.kind, title: e.title ?? p.title, date: e.date ?? p.date, time: p.kind === 'task' ? '' : (e.time ?? p.time), for: e.for || p.for || [], driver: e.driver || '', withUs: e.withUs || [], where: p.where, note: p.note, source: p.source };
 }
 
 async function runExtraction() {
@@ -551,16 +611,27 @@ function captureMembers() {
   root.querySelectorAll('[data-mk]').forEach((el) => { const m = memberDraft[+el.dataset.mk]; if (m) m.kind = el.value; });
   if (settingsDraft) {
     const n = document.getElementById('s-notify'); if (n) settingsDraft.notify = n.value;
-    ['weekly-day', 'weekly-hour', 'reminder-hour', 'digest-hour'].forEach((k) => { const el = document.getElementById('s-' + k); if (el) settingsDraft[k] = el.value; });
+    ['weekly-day', 'weekly-hour', 'reminder-hour', 'digest-hour', 'morning-hour'].forEach((k) => { const el = document.getElementById('s-' + k); if (el) settingsDraft[k] = el.value; });
   }
 }
 
 function formHtml(isEdit) {
   const event = addKind === 'event';
-  return `<h2>${isEdit ? 'Edit' : 'Add something'}</h2>`
-    + (isEdit ? '' : '<div class="seg">'
-      + `<button data-act="kind" data-k="event" aria-pressed="${event}">On the calendar</button>`
-      + `<button data-act="kind" data-k="idea" aria-pressed="${!event}">On the shelf</button></div>`)
+  const seg = isEdit ? '' : '<div class="seg">'
+    + `<button data-act="kind" data-k="event" aria-pressed="${event}">Calendar</button>`
+    + `<button data-act="kind" data-k="task" aria-pressed="${addKind === 'task'}">To do</button>`
+    + `<button data-act="kind" data-k="idea" aria-pressed="${addKind === 'idea'}">Shelf</button></div>`;
+  if (addKind === 'task') {
+    return `<h2>${isEdit ? 'Edit to-do' : 'Add something'}</h2>` + seg
+      + `<div class="field"><label for="f-title">What needs doing</label><input type="text" id="f-title" data-autofocus value="${esc(draft.title)}" placeholder="Return permission slip, register for soccer…"></div>`
+      + `<div class="field"><label for="f-date">Due</label><input type="date" id="f-date" value="${esc(draft.date || todayStr())}"></div>`
+      + `<div class="field"><span class="label">Who it is for</span>${chipsHtml('for', draft.for, roster())}</div>`
+      + `<div class="field"><label for="f-note">Notes</label><textarea id="f-note">${esc(draft.note)}</textarea></div>`
+      + `<button class="primary" data-act="${isEdit ? 'save-task' : 'create'}"${busy ? ' disabled' : ''}>${busy ? 'Saving…' : isEdit ? 'Save changes' : 'Add to to-dos'}</button>`
+      + (isEdit ? `<button class="primary danger" data-act="del-task" data-id="${draft.id}"${busy ? ' disabled' : ''}>Delete</button>` : '')
+      + '<button class="ghost" data-act="close">Cancel</button>';
+  }
+  return `<h2>${isEdit ? 'Edit' : 'Add something'}</h2>` + seg
     + `<div class="field"><label for="f-title">What is it</label><input type="text" id="f-title" data-autofocus value="${esc(draft.title)}" placeholder="${event ? 'Orthodontist, soccer practice…' : 'Something you might do'}"></div>`
     + (event
       ? `<div class="stagerow"><div><label class="label" for="f-date">Date</label><input type="date" id="f-date" value="${esc(draft.date || todayStr())}"></div>`
@@ -595,7 +666,8 @@ function householdHtml() {
       + `<div class="hours"><div class="field"><label for="s-weekly-day">Weekly summary on</label><select id="s-weekly-day">${dayOpts(s['weekly-day'])}</select></div>`
       + `<div class="field"><label for="s-weekly-hour">at</label><select id="s-weekly-hour">${hourOpts(s['weekly-hour'])}</select></div>`
       + `<div class="field"><label for="s-reminder-hour">Evening-before reminder at</label><select id="s-reminder-hour">${hourOpts(s['reminder-hour'])}</select></div>`
-      + `<div class="field"><label for="s-digest-hour">"Things are waiting" email at</label><select id="s-digest-hour">${hourOpts(s['digest-hour'])}</select></div></div>`;
+      + `<div class="field"><label for="s-digest-hour">"Things are waiting" email at</label><select id="s-digest-hour">${hourOpts(s['digest-hour'])}</select></div>`
+      + `<div class="field"><label for="s-morning-hour">Morning "today" notification</label><select id="s-morning-hour"><option value="off"${s['morning-hour'] === 'off' ? ' selected' : ''}>Off</option>${hourOpts(s['morning-hour'])}</select></div></div>`;
   }
   h += `<button class="primary" data-act="save-members"${busy ? ' disabled' : ''}>${busy ? 'Saving…' : 'Save household'}</button>`
     + '<div class="subhead">Look</div><p class="note">Just for this phone.</p><div class="chips">'
@@ -624,10 +696,10 @@ function pushHtml() {
     case 'blocked':
       return h + '<p class="note">Notifications are blocked for Household. Turn them on in the phone\'s <b>Settings → Notifications → Household</b>, then come back here.</p>';
     case 'on':
-      return h + '<p class="note">On. The evening reminder, the weekly summary and the "things are waiting" note show up here, at the times above.</p>'
+      return h + '<p class="note">On. The morning "today" note, the evening reminder, the weekly summary and the "things are waiting" note show up here, at the times above.</p>'
         + `<div class="row"><button class="btn" data-act="push-test"${dis}>Send a test</button><button class="btn del" data-act="push-off"${dis}>Turn off</button></div>`;
     default:
-      return h + '<p class="note">Get the evening reminder and weekly summary as notifications, like texts but from the app.</p>'
+      return h + '<p class="note">Get the morning "today" note, the evening reminder and the weekly summary as notifications, like texts but from the app.</p>'
         + `<div class="row"><button class="btn go" data-act="push-on"${dis}>Turn on notifications</button></div>`;
   }
 }
@@ -660,6 +732,7 @@ function sheetHtml() {
       names(e.for || []),
       dm ? `${dm.name} driving` : e.driver === 'none' ? 'No driving needed' : needsDriver(e) ? 'No driver yet' : '',
       (e.withUs || []).length ? `${names(e.withUs)} with us` : '',
+      awayKids(e) ? `${names(awayKids(e).kids)} ${awayKids(e).kids.length > 1 ? 'are' : 'is'} at ${awayKids(e).where} that day` : '',
       e.where, e.note,
       /^sync:/.test(e.source || '') ? `From the ${e.source.slice(5)} calendar. Change it there; edits here are replaced on the next sync.` : '',
     ].filter(Boolean);
@@ -740,6 +813,7 @@ async function openHousehold() {
       notify: (settings.notify || []).join('\n'),
       'weekly-day': settings.weekly?.day || 'MONDAY', 'weekly-hour': settings.weekly?.hour ?? 7,
       'reminder-hour': settings.reminders?.hour ?? 18, 'digest-hour': settings.digest?.hour ?? 19,
+      'morning-hour': settings.morning && settings.morning.enabled === false ? 'off' : String(settings.morning?.hour ?? 7),
     };
     if (api.hasSiriKey) siri = { has: await api.hasSiriKey() };
     try { pushState = await readPushState(); } catch (_) { pushState = 'unsupported'; }
@@ -759,6 +833,9 @@ async function saveHousehold() {
         weekly: { ...(settings.weekly || {}), enabled: true, day: s['weekly-day'], hour: +s['weekly-hour'] },
         reminders: { ...(settings.reminders || {}), enabled: true, hour: +s['reminder-hour'] },
         digest: { ...(settings.digest || {}), enabled: true, hour: +s['digest-hour'] },
+        morning: s['morning-hour'] === 'off'
+          ? { hour: 7, email: false, ...(settings.morning || {}), enabled: false }
+          : { email: false, ...(settings.morning || {}), enabled: true, hour: +s['morning-hour'] },
       });
     }
   }, () => { memberDraft = null; settingsDraft = null; sheet = null; });
@@ -853,8 +930,30 @@ root.addEventListener('click', async (ev) => {
     case 'open-add': draft = newDraft(); addKind = 'event'; sheet = { mode: 'add' }; render(); break;
     case 'kind': {
       const was = addKind; addKind = t.dataset.k;
-      if (was !== addKind) draft.date = addKind === 'event' ? (draft.date || todayStr()) : '';
+      if (was !== addKind) draft.date = addKind === 'idea' ? '' : (draft.date || todayStr());
       render(); break;
+    }
+    case 'tasks-more': tasksOpen = !tasksOpen; render(); break;
+    case 'task-done': {
+      const tk = (state.tasks || []).find((x) => x.id === id); if (!tk) return;
+      await mutate(() => api.setTaskDone(id, true), () => showUndo(`Done: ${tk.title}`, () => mutate(() => api.setTaskDone(id, false))));
+      break;
+    }
+    case 'task': {
+      const tk = (state.tasks || []).find((x) => x.id === id); if (!tk) return;
+      draft = { ...newDraft(), id: tk.id, title: tk.title, date: tk.due, note: tk.note, for: (tk.for || []).slice() };
+      addKind = 'task'; sheet = { mode: 'edit', id: tk.id }; render(); break;
+    }
+    case 'save-task': {
+      if (!draft.title.trim()) { document.getElementById('f-title')?.focus(); return; }
+      const tid = draft.id;
+      await mutate(() => api.updateTask({ id: tid, title: draft.title.trim(), due: draft.date || todayStr(), for: draft.for.slice(), note: draft.note }), () => { sheet = null; draft = null; });
+      break;
+    }
+    case 'del-task': {
+      const tk = (state.tasks || []).find((x) => x.id === id); if (!tk) return;
+      await mutate(() => api.deleteTask(id), () => { sheet = null; draft = null; showUndo(`Deleted "${tk.title}"`, () => mutate(() => api.restoreTask(tk))); });
+      break;
     }
     case 'for': {
       const i = draft.for.indexOf(id);
@@ -900,7 +999,10 @@ root.addEventListener('click', async (ev) => {
 
     case 'create': {
       if (!draft.title.trim()) { document.getElementById('f-title')?.focus(); return; }
-      if (addKind === 'event') {
+      if (addKind === 'task') {
+        await mutate(() => api.addTask({ id: uid(), title: draft.title.trim(), due: draft.date || todayStr(), for: draft.for.slice(), note: draft.note }),
+          () => { sheet = null; draft = null; view = 'week'; });
+      } else if (addKind === 'event') {
         const nid = uid(), when = draft.date || todayStr();
         await mutate(() => api.addEvent({ id: nid, title: draft.title.trim(), date: when, time: draft.time, for: draft.for.slice(), driver: draft.driver, withUs: (draft.withUs || []).slice(), where: draft.where, note: draft.note, source: 'manual' }),
           () => { sheet = null; draft = null; flashId = nid; view = 'week'; weekOffset = weekOffsetFor(when); });

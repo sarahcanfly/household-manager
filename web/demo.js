@@ -15,6 +15,11 @@ export function createDemoBackend() {
       { id: 'k3', name: 'Ivy', kind: 'kid', color: '#2E6E75', active: true },
       { id: 'o1', name: 'Grandma Rose', kind: 'other', color: '#9A4B2E', active: true },
     ],
+    tasks: [
+      { id: uid(), title: 'Return field trip form', due: day(-1), for: ['k1'], note: 'Signed, with $12', done: false, source: 'email' },
+      { id: uid(), title: 'Register for spring soccer', due: day(4), for: ['k2'], note: 'Opens at 9am', done: false, source: 'agent' },
+      { id: uid(), title: 'Pay camp deposit', due: day(12), for: [], note: '', done: false, source: 'manual' },
+    ],
     events: [
       { id: uid(), title: 'Soccer practice', date: day(0), time: '17:30', for: ['k2'], driver: 'a1', withUs: [], where: 'Riverside field', note: 'Bring water', source: 'feed' },
       { id: uid(), title: 'Book club', date: day(0), time: '18:00', for: ['a1'], driver: '', withUs: [], where: 'Maple St', note: '', source: 'manual' },
@@ -22,18 +27,21 @@ export function createDemoBackend() {
       { id: uid(), title: 'No school', date: day(2), time: '', for: ['k1', 'k2', 'k3'], driver: 'none', withUs: ['k3'], where: '', note: '', source: 'feed' },
       { id: uid(), title: 'Swim lesson', date: day(2), time: '16:00', for: ['k3'], driver: 'o1', withUs: [], where: 'Y pool', note: '', source: 'manual' },
       { id: uid(), title: 'Dentist', date: day(3), time: '09:30', for: ['a2'], driver: '', withUs: [], where: '', note: '', source: 'manual' },
+      ...[3, 4, 5].map((n) => ({ id: uid(), title: "Mia & Leo @Sam's", date: day(n), time: '', for: ['k1', 'k2'], driver: 'none', withUs: [], where: '', note: '', source: 'sync:Co-parent', custody: "Sam's" })),
+      { id: uid(), title: 'Leo: soccer game', date: day(4), time: '10:00', for: ['k2'], driver: 'a1', withUs: [], where: 'Riverside field', note: '', source: 'manual' },
       { id: uid(), title: 'Piano recital', date: day(5), time: '15:00', for: ['k1', 'a1', 'a2'], driver: 'a2', withUs: [], where: 'Town hall', note: '', source: 'photo' },
     ],
     pending: [
       { id: uid(), title: 'Bake sale', date: day(6), time: '15:00', for: ['k2'], where: 'School gym', note: 'Bring two dozen', source: 'email', sourceRef: 'PTO news — pto@school.example', confidence: 'high' },
       { id: uid(), title: 'Picture day', date: day(8), time: '', for: [], where: '', note: '', source: 'doc', sourceRef: '', confidence: 'low' },
+      { id: uid(), title: 'Order yearbook', date: day(9), time: '', for: ['k1'], where: '', note: 'Online, $35', source: 'email', sourceRef: 'Principal newsletter', confidence: 'high', kind: 'task' },
     ],
     ideas: [
       { id: uid(), title: 'Science museum night', date: day(12), time: '18:00', for: ['a1', 'a2', 'k1'], cost: '$25 each', link: '', note: '' },
       { id: uid(), title: 'Try the new ramen place', date: '', time: '', for: ['a1', 'a2'], cost: '', link: '', note: 'Jordan heard it is great' },
     ],
   };
-  const settings = { notify: ['alex@example.com'], weekly: { enabled: true, day: 'MONDAY', hour: 7 }, reminders: { enabled: true, hour: 18 }, digest: { enabled: true, hour: 19 }, timezone: 'America/New_York' };
+  const settings = { morning: { enabled: true, hour: 7, email: false }, notify: ['alex@example.com'], weekly: { enabled: true, day: 'MONDAY', hour: 7 }, reminders: { enabled: true, hour: 18 }, digest: { enabled: true, hour: 19 }, timezone: 'America/New_York' };
   const wait = (v) => new Promise((r) => setTimeout(() => r(v), 120));
   const clone = (x) => JSON.parse(JSON.stringify(x));
   const byId = (arr, id) => arr.findIndex((x) => x.id === id);
@@ -43,7 +51,7 @@ export function createDemoBackend() {
     mode: 'demo',
     session: () => wait({ email: 'alex@example.com' }),
     signIn: () => wait(), signOut: () => wait(), isAllowed: () => wait(true),
-    load: () => wait(clone(db)),
+    load: () => wait({ ...clone(db), tasks: clone(db.tasks.filter((t) => !t.done)), morning: settings.morning }),
     settings: () => wait(clone(settings)),
     saveSettings: (p) => { Object.assign(settings, p); return wait(); },
     onChange: () => () => {},
@@ -57,7 +65,12 @@ export function createDemoBackend() {
     restoreIdea(idea, eventId) { if (eventId) db.events.splice(byId(db.events, eventId), 1); db.ideas.push(clone(idea)); return wait(); },
     addIdea(it) { db.ideas.push(clone(it)); return wait(); },
     deleteIdea(id) { db.ideas.splice(byId(db.ideas, id), 1); return wait(); },
-    approve(p) { db.events.push(toEvent(p)); db.pending.splice(byId(db.pending, p.id), 1); return wait(); },
+    addTask(t) { db.tasks.push({ ...clone(t), done: false, source: 'manual' }); return wait(); },
+    updateTask(t) { Object.assign(db.tasks[byId(db.tasks, t.id)], clone(t)); return wait(); },
+    setTaskDone(id, done) { db.tasks[byId(db.tasks, id)].done = done; return wait(); },
+    deleteTask(id) { db.tasks.splice(byId(db.tasks, id), 1); return wait(); },
+    restoreTask(t) { const i = byId(db.tasks, t.id); if (i > -1) db.tasks[i] = { ...clone(t), done: false }; else db.tasks.push({ ...clone(t), done: false }); return wait(); },
+    approve(p) { if (p.kind === 'task') { db.tasks.push({ id: uid(), title: p.title, due: p.date, for: p.for || [], note: p.note || '', done: false, source: p.source || 'email' }); db.pending.splice(byId(db.pending, p.id), 1); return wait(); } db.events.push(toEvent(p)); db.pending.splice(byId(db.pending, p.id), 1); return wait(); },
     async approveMany(ps) { for (const p of ps) await this.approve(p); return { done: ps.length, failed: [] }; },
     shelve(p) { db.ideas.push({ id: uid(), title: p.title, date: p.date, time: p.time, for: p.for, cost: '', link: '', note: p.note }); db.pending.splice(byId(db.pending, p.id), 1); return wait(); },
     async shelveMany(ps) { for (const p of ps) await this.shelve(p); return { done: ps.length, failed: [] }; },

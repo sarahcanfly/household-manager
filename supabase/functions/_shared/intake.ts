@@ -16,6 +16,7 @@ const toStage = (rows: (Extracted | IcsItem)[], source: string, ref: string): St
   rows.map((r) => ({
     title: r.title, date: r.date, time: r.time, for_ids: r.for_ids, place: r.place, note: r.note,
     confidence: 'confidence' in r ? r.confidence : 'high', source, source_ref: ref.slice(0, 500),
+    kind: 'kind' in r ? r.kind : 'event',
   }));
 
 async function context(d: IntakeDeps): Promise<{ s: Settings; members: Member[]; today: string }> {

@@ -1,19 +1,19 @@
 // Hourly: weekly summary, evening-before reminder, and the "things are waiting"
 // digest, each at the hour set in Settings. A signed-in person can also send a
-// test: POST { send: 'weekly' | 'reminder' | 'digest' }.
+// test: POST { send: 'weekly' | 'reminder' | 'digest' | 'morning' }.
 import { body, handler, json } from '../_shared/http.ts';
 import { requireCronOrUser } from '../_shared/auth.ts';
 import { env } from '../_shared/env.ts';
 import { serviceDb } from '../_shared/db.ts';
 import { RestStore } from '../_shared/store.ts';
 import { sendMail } from '../_shared/mail.ts';
-import { runNotify } from '../_shared/notifyjob.ts';
+import { runNotify, type NotifyKind } from '../_shared/notifyjob.ts';
 import { pushToHousehold } from '../_shared/pushdb.ts';
 
 Deno.serve(handler(async (req) => {
   const actor = await requireCronOrUser(req);
-  const b = await body<{ send?: 'weekly' | 'reminder' | 'digest' }>(req);
-  const force = actor !== 'scheduled' && ['weekly', 'reminder', 'digest'].includes(String(b.send)) ? b.send : undefined;
+  const b = await body<{ send?: NotifyKind }>(req);
+  const force = actor !== 'scheduled' && ['weekly', 'reminder', 'digest', 'morning'].includes(String(b.send)) ? b.send : undefined;
   const db = serviceDb();
   const store = new RestStore(db);
   const sent = await runNotify({

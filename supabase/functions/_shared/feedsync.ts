@@ -23,6 +23,7 @@ export interface SyncFeedConfig extends FeedRules {
 export interface FeedRow {
   uid: string; title: string; date: string; time: string; for_ids: string[];
   with_us: string[]; place: string; note: string; driver: string;
+  custody?: string;
 }
 export interface ExistingRow extends FeedRow { id: string }
 
@@ -46,9 +47,16 @@ export function desiredRows(items: IcsItem[], feed: SyncFeedConfig, members: Mem
       with_us: custody ? idsFor(custody.with_us, members) : [],
       place: it.place, note: it.note,
       driver: custody ? 'none' : '',
+      custody: custody ? custodyPlace(it.title) : '',
     });
   }
   return out;
+}
+
+/** Whose house a custody event means: the text after "@" ("A&O @Eli's" -> "Eli's"), else the title. */
+export function custodyPlace(title: string): string {
+  const m = title.match(/@\s*(.+)$/);
+  return (m ? m[1] : title).trim().slice(0, 40);
 }
 
 const sameSet = (a: string[], b: string[]) => [...a].sort().join(',') === [...b].sort().join(',');
@@ -76,6 +84,7 @@ export function planSync(desired: FeedRow[], existing: ExistingRow[], from: stri
     if (!sameSet(e.for_ids, d.for_ids)) patch.for_ids = d.for_ids;
     if (!sameSet(e.with_us, d.with_us)) patch.with_us = d.with_us;
     if (d.driver === 'none' && e.driver !== 'none') patch.driver = 'none';
+    if ((e.custody ?? '') !== (d.custody ?? '')) patch.custody = d.custody ?? '';
     if (Object.keys(patch).length) update.push({ id: e.id, patch });
   }
   return { insert, update, remove: [...have.values()].map((e) => e.id) };

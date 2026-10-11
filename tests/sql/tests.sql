@@ -181,6 +181,28 @@ exception when insufficient_privilege then raise notice 'ok - stranger cannot su
 end $$;
 reset role;
 
+-- 5d. To-dos, custody column, morning setting
+select pg_temp.check((select value->>'hour' from public.settings where key = 'morning') = '7', 'morning notification defaults to 7am');
+select public.stage_pending(jsonb_build_array(
+  jsonb_build_object('title', 'Permission slip due', 'date', (public.hm_today() + 3)::text, 'time', '08:00', 'kind', 'task', 'for_ids', '["k1"]'::jsonb, 'source', 'email'),
+  jsonb_build_object('title', 'Permission slip due', 'date', (public.hm_today() + 3)::text, 'kind', 'task'),
+  jsonb_build_object('title', 'Old form', 'date', (public.hm_today() - 1)::text, 'kind', 'task')));
+select pg_temp.check((select count(*) from public.pending where kind = 'task') = 1, 'to-do staged once, past one skipped');
+select pg_temp.check((select time from public.pending where kind = 'task') is null, 'to-dos have no time');
+select pg_temp.as_user('alex@x.com');
+create temp table tid as select public.approve_pending(jsonb_build_object('id', (select id from public.pending where kind = 'task'), 'note', 'Sign and return')) as id;
+select pg_temp.check((select count(*) from public.tasks where id = (select id from tid) and due = public.hm_today() + 3 and for_ids = '{k1}' and note = 'Sign and return' and not done and source = 'email') = 1, 'approving a to-do puts it on the list, not the calendar');
+select pg_temp.check((select count(*) from public.events where title = 'Permission slip due') = 0, 'nothing added to the calendar');
+update public.tasks set done = true, done_at = now() where id = (select id from tid);
+select pg_temp.check((select done from public.tasks where id = (select id from tid)), 'household can tick a to-do');
+reset role;
+select public.stage_pending(jsonb_build_array(jsonb_build_object('title', 'Permission slip due', 'date', (public.hm_today() + 3)::text, 'kind', 'task')));
+select pg_temp.check((select count(*) from public.pending where kind = 'task') = 0, 'an existing to-do is not queued again');
+select pg_temp.as_user('stranger@x.com');
+select pg_temp.check((select count(*) from public.tasks) = 0, 'stranger sees no to-dos');
+reset role;
+select pg_temp.check((select custody from public.events limit 1) = '', 'custody defaults to empty');
+
 -- 6. Removing someone from allowed_users locks them out immediately
 delete from public.allowed_users where email = 'jordan@x.com';
 select pg_temp.as_user('jordan@x.com');

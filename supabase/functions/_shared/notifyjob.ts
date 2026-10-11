@@ -3,7 +3,7 @@
 // the evening-before reminder, or the "things are waiting" digest.
 
 import { addDays, zoned } from './domain.ts';
-import { digestText, tomorrowText, trimSms, weeklyText } from './notify.ts';
+import { digestText, morningText, tomorrowText, trimSms, weeklyText } from './notify.ts';
 import { smsAddress, type Mailer } from './mail.ts';
 import type { Store } from './store.ts';
 import type { PushMessage } from './webpush.ts';
@@ -25,21 +25,23 @@ export function pushFrom(kind: string, msg: { subject: string; sms: string }, ap
   return { title: msg.subject, body: lines.join('\n'), url: appUrl, tag: kind };
 }
 
-export async function runNotify(d: NotifyDeps, force?: 'weekly' | 'reminder' | 'digest'): Promise<string[]> {
+export type NotifyKind = 'weekly' | 'reminder' | 'digest' | 'morning';
+
+export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<string[]> {
   const s = await d.store.settings();
   const z = zoned(d.now ?? new Date(), s.timezone);
   const w = await d.store.world();
   const sent: string[] = [];
   const recipients = s.notify ?? [];
 
-  const deliver = async (kind: 'weekly' | 'reminder' | 'digest', msg: { subject: string; body: string; sms: string } | null, smsOn: boolean) => {
+  const deliver = async (kind: NotifyKind, msg: { subject: string; body: string; sms: string } | null, smsOn: boolean, emailOn = true) => {
     if (!msg) return;
-    const pushOn = { weekly: s.push?.weekly, reminder: s.push?.reminders, digest: s.push?.digest }[kind] ?? true;
+    const pushOn = { weekly: s.push?.weekly, reminder: s.push?.reminders, digest: s.push?.digest, morning: true }[kind] ?? true;
     if (d.push && pushOn !== false) {
       try { await d.push(pushFrom(kind, msg, d.appUrl)); }
       catch (e) { await d.store.log('scheduled', 'push error', (e as Error).message); }
     }
-    if (recipients.length) await d.mail(recipients, msg.subject, msg.body);
+    if (emailOn && recipients.length) await d.mail(recipients, msg.subject, msg.body);
     if (s.sms?.enabled && smsOn) {
       for (const r of s.sms.recipients ?? []) {
         try { await d.mail([smsAddress(r)], 'Household', trimSms(msg.sms, s.sms.max_chars || 600)); }
@@ -59,6 +61,10 @@ export async function runNotify(d: NotifyDeps, force?: 'weekly' | 'reminder' | '
   }
   if (due('reminder', s.reminders?.enabled, s.reminders?.hour) && (force === 'reminder' || await d.claim('reminder', z.date))) {
     await deliver('reminder', tomorrowText(w, addDays(z.date, 1), d.appUrl), !!s.sms?.reminders);
+  }
+  // The morning note is a phone notification; it is emailed too only if morning.email is on.
+  if (due('morning', s.morning?.enabled, s.morning?.hour) && (force === 'morning' || await d.claim('morning', z.date))) {
+    await deliver('morning', morningText(w, z.date, d.appUrl), false, !!s.morning?.email);
   }
   if (due('digest', s.digest?.enabled, s.digest?.hour) && (force === 'digest' || await d.claim('digest', z.date))) {
     await deliver('digest', digestText(w, d.appUrl), !!s.sms?.digest);
