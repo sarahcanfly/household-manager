@@ -667,9 +667,12 @@ async function bulk(kind) {
 root.addEventListener('submit', async (ev) => {
   if (ev.target.dataset.form !== 'signin') return;
   ev.preventDefault();
+  // Read what was typed before re-rendering, which rebuilds the form.
+  const email = val('g-email'), password = document.getElementById('g-pass').value;
+  if (!email || !password) { gateErr = 'Enter your email and password.'; render(); return; }
   busy = true; gateErr = ''; render();
   try {
-    await api.signIn(val('g-email'), document.getElementById('g-pass').value);
+    await api.signIn(email, password);
     busy = false;
     await enter();
   } catch (err) { busy = false; gateErr = err.message === 'Invalid login credentials' ? 'That email and password do not match.' : err.message; render(); }
