@@ -25,7 +25,9 @@ export function handler(fn: (req: Request) => Promise<Response>) {
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 500;
       if (status >= 500) console.error(e);
-      return json({ error: (e as Error).message || 'Something went wrong.' }, status);
+      const message = (e as Error).message || 'Something went wrong.';
+      // "reply" too, so a Siri Shortcut that reads the reply says what went wrong instead of nothing.
+      return json({ error: message, reply: `Household could not do that: ${message}` }, status);
     }
   };
 }
