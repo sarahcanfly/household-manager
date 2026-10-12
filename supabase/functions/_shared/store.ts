@@ -6,6 +6,7 @@ import { eq, type Rest } from './db.ts';
 import type { FeedRules } from './ics.ts';
 import type { ExistingRow, FeedRow, SyncFeedConfig, SyncStore } from './feedsync.ts';
 import { DEFAULT_LOCAL, type LocalSettings, type PersonalSearch } from './localevents.ts';
+import type { Reminder } from './holidays.ts';
 
 export type Feed = SyncFeedConfig;
 export interface DocSource { id: string; name: string; type?: 'doc' | 'pdf'; hint?: string }
@@ -74,6 +75,9 @@ export interface Store extends SyncStore {
   stage(rows: StageRow[]): Promise<StageResult>;
   log(actor: string, action: string, detail: string): Promise<void>;
   setSetting(key: string, value: unknown): Promise<void>;
+  reminders(): Promise<Reminder[]>;
+  insertReminder(r: Omit<Reminder, 'id'> & { created_by: string }): Promise<Reminder>;
+  deleteReminder(id: string): Promise<boolean>;
 }
 
 /** Database columns use null for "all day" and "driver undecided"; the app uses ''. */
@@ -129,6 +133,12 @@ export class RestStore implements Store {
   async insertIdea(row: Omit<Idea, 'id'>) {
     return normIdea((await this.db.insert('ideas', { ...row, date: row.date || null, time: row.time || null }))[0]);
   }
+  async reminders() {
+    return (await this.db.select<Reminder>('reminders', 'select=*&order=created_at.asc'))
+      .map((r) => ({ ...r, days: (r.days ?? []).map(Number), hour: Number(r.hour), every_weeks: Number(r.every_weeks) || 1, start_date: String(r.start_date).slice(0, 10) }));
+  }
+  async insertReminder(r: Omit<Reminder, 'id'> & { created_by: string }) { return (await this.db.insert<Reminder>('reminders', r))[0]; }
+  async deleteReminder(id: string) { return (await this.db.remove('reminders', `id=${eq(id)}`)).length > 0; }
   async setSetting(key: string, value: unknown) { await this.db.upsert('settings', [{ key, value }], 'key'); }
   async insertTaste(row: { title: string; kind: string; place: string; vote: 1 | -1; how: string; by_email: string }) {
     await this.db.req('POST', 'event_taste', row, 'return=minimal');

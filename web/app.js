@@ -27,6 +27,7 @@ let intakeMode = 'text', intakeText = '', fileData = '', fileType = '', filePrev
 let parsing = false, parseNote = '', edits = {}, picked = {};
 let askText = '', askLog = [], askBusy = false, waiting = [], listening = false, recognizer = null;
 let siri = null;   // { has: bool, key?: string } while the Household sheet is open
+let rems = null;   // repeating reminders, while the Household sheet is open
 let pushState = '';   // '', 'unsupported', 'install', 'blocked', 'off', 'on' (this phone)
 let gate = null, gateErr = '', offline = !navigator.onLine;
 let theme = readTheme();
@@ -692,6 +693,7 @@ function householdHtml() {
     + '<div class="subhead">Look</div><p class="note">Just for this phone.</p><div class="chips">'
     + THEMES.map((t) => `<button class="chip" data-act="theme" data-t="${t.id}" aria-pressed="${theme === t.id}">${esc(t.name)} <span style="opacity:.7">${esc(t.hint)}</span></button>`).join('')
     + '</div>'
+    + remindersHtml()
     + pushHtml()
     + siriHtml()
     + '<div class="subhead">Tools</div><div class="row">'
@@ -702,6 +704,21 @@ function householdHtml() {
     + '<button class="btn" data-act="signout">Sign out</button>'
     + '<button class="ghost" data-act="close">Close</button>';
   return h;
+}
+
+function remindersHtml() {
+  if (!rems) return '';
+  const label = (r) => {
+    const h = r.hour % 12 || 12, ap = r.hour < 12 ? 'am' : 'pm';
+    const days = r.days.map((d) => DAYS[d].slice(0, 3)).join(', ');
+    const hol = r.holiday === 'skip' ? ' · skipped in holiday weeks' : r.holiday === 'shift' ? ' · a day later in holiday weeks' : '';
+    return `${r.every_weeks > 1 ? `Every ${r.every_weeks} weeks, ` : ''}${days} at ${h}${ap}${hol}`;
+  };
+  return '<div class="subhead">Reminders</div>'
+    + (rems.length ? rems.map((r) => `<div class="trow"><span></span><div><span class="ttitle">${esc(r.title)}</span><span class="tmeta"><span>${esc(label(r))}</span></span>`
+      + `<button class="linkish" data-act="rm-reminder" data-id="${esc(r.id)}">Remove</button></div></div>`).join('')
+      : '<p class="note">None yet.</p>')
+    + '<p class="note">Sent to every phone with notifications on. To add one, tell the agent, e.g. "remind us to take out the trash and recycling every Friday at 7am, a day later in holiday weeks".</p>';
 }
 
 function pushHtml() {
@@ -838,6 +855,7 @@ async function openHousehold() {
     };
     if (api.hasSiriKey) siri = { has: await api.hasSiriKey() };
     try { pushState = await readPushState(); } catch (_) { pushState = 'unsupported'; }
+    try { rems = api.reminders ? await api.reminders() : null; } catch (_) { rems = null; }
     if (sheet && sheet.mode === 'household') render();
   } catch (err) { errMsg = err.message; render(); }
 }
@@ -1000,7 +1018,11 @@ root.addEventListener('click', async (ev) => {
       if (i > -1) draft.withUs.splice(i, 1); else draft.withUs.push(id);
       render(); break;
     }
-    case 'close': case 'scrim': fromEmail = null; sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; render(); break;
+    case 'rm-reminder':
+      busy = true; render();
+      try { await api.deleteReminder(id); rems = rems.filter((r) => r.id !== id); info = 'Reminder removed.'; } catch (err) { errMsg = err.message; }
+      busy = false; render(); break;
+    case 'close': case 'scrim': rems = null; fromEmail = null; sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; render(); break;
     case 'push-on':
       busy = true; render();
       try { await turnOnPush(); if (pushState === 'on') info = 'Notifications are on. A test is on its way.'; } catch (err) { errMsg = err.message; }

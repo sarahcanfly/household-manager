@@ -69,6 +69,8 @@ export function createDemoBackend() {
     updateTask(t) { Object.assign(db.tasks[byId(db.tasks, t.id)], clone(t)); return wait(); },
     setTaskDone(id, done) { db.tasks[byId(db.tasks, id)].done = done; return wait(); },
     rateEvent() { return wait(); },
+    reminders: () => wait([{ id: 'r1', title: 'Trash & recycling', note: '', days: [5], hour: 7, every_weeks: 1, holiday: 'shift' }]),
+    deleteReminder: () => wait(),
     deleteTask(id) { db.tasks.splice(byId(db.tasks, id), 1); return wait(); },
     restoreTask(t) { const i = byId(db.tasks, t.id); if (i > -1) db.tasks[i] = { ...clone(t), done: false }; else db.tasks.push({ ...clone(t), done: false }); return wait(); },
     approve(p) { if (p.kind === 'task') { db.tasks.push({ id: uid(), title: p.title, due: p.date, for: p.for || [], note: p.note || '', done: false, source: p.source || 'email' }); db.pending.splice(byId(db.pending, p.id), 1); return wait(); } db.events.push(toEvent(p)); db.pending.splice(byId(db.pending, p.id), 1); return wait(); },

@@ -175,6 +175,10 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
   the next three days is in the morning notification; the evening reminder and weekly summary list them too.
 - **Custody days** from the co-parent calendar show as a dashed line under the date ("Aaron & Ozzie at Eli's").
   Events on those days note it ("Reid at Jenn's") and never ask who is driving the kids who are away.
+- **Reminders:** tell the agent "remind us to take out the trash and recycling every Friday at 7am" (add "skip
+  holiday weeks" or "a day later in holiday weeks"). They arrive as phone notifications on every phone with
+  notifications on, follow the town's holiday list (a weekday holiday delays the rest of that week's pickups), and
+  are listed under Household, where you can remove them.
 - **Morning notification:** 7am by default, set in Household (or Off). Today's events with their notes, where the
   kids are, and to-dos due soon. Notification only; set `morning` → `email` to true in settings to also email it.
 - **Household:** people, who gets emails, reminder times, theme, notifications on this phone, "check the school calendar now".

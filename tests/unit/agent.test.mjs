@@ -132,7 +132,7 @@ test('history is cleaned; API failure gives a readable reply', async () => {
   const r = await agent.ask('x', []);
   assert.match(r.reply, /Something went wrong/); assert.equal(r.changed, false);
   assert.match((await agent.ask('   ', [])).reply, /What would you like/);
-  assert.equal(TOOLS.length, 14);
+  assert.equal(TOOLS.length, 15);
 });
 
 test('all-day events (custody, no school) say nothing about driving', async () => {

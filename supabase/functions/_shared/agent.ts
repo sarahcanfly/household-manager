@@ -10,6 +10,7 @@ import {
   type Ev, type Fields, type World,
 } from './domain.ts';
 import type { EventRow, Store, TaskPatch } from './store.ts';
+import { describeReminder, firesOn, holidayBefore } from './holidays.ts';
 import { textOf, type Block, type ClaudeFn } from './claude.ts';
 
 const MAX_STEPS = 8, MAX_WRITES = 5;
@@ -82,12 +83,20 @@ export const TOOLS = [
     input_schema: { type: 'object', properties: { action: { type: 'string', enum: ['add', 'remove', 'list'] },
       title: { type: 'string', description: 'Short heading, e.g. "Mahjong open play"' },
       what: { type: 'string', description: 'What to look for, specific enough to search: kind of activity, style, level' } }, required: ['action'] } },
+  { name: 'reminders', description: 'Repeating reminders sent to everyone\'s phone as a notification ("trash and recycling every Friday at 7am"). Not calendar events. action add needs title, days and hour; list shows them with ids; remove needs id. holiday: what happens in a week with a weekday holiday on or before that day (town trash pickup is delayed a day after holidays): skip, shift (one day later) or none.',
+    input_schema: { type: 'object', properties: { action: { type: 'string', enum: ['add', 'list', 'remove'] },
+      title: { type: 'string' }, note: { type: 'string', description: 'Optional extra line, e.g. "Recycling goes out too"' },
+      days: { type: 'array', items: { type: 'string', enum: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] } },
+      hour: { type: 'integer', description: '0–23, the hour it goes off' },
+      every_weeks: { type: 'integer', description: '1 every week (default), 2 every other week' },
+      holiday: { type: 'string', enum: ['none', 'skip', 'shift'] },
+      id: { type: 'string' } }, required: ['action'] } },
   { name: 'update_task', description: 'Tick off (done: true), reopen, or change a to-do. Takes effect immediately.',
     input_schema: { type: 'object', properties: { id: { type: 'string', description: 'To-do id, from list_tasks' }, done: { type: 'boolean' },
       title: { type: 'string' }, due: { type: 'string', description: 'YYYY-MM-DD' }, for: eventFields.for, note: { type: 'string' } }, required: ['id'] } },
 ];
 
-const WRITE = new Set(['add_event', 'add_repeating_event', 'add_idea', 'update_event', 'delete_event', 'add_task', 'update_task', 'save_event_taste', 'weekly_search']);
+const WRITE = new Set(['reminders', 'add_event', 'add_repeating_event', 'add_idea', 'update_event', 'delete_event', 'add_task', 'update_task', 'save_event_taste', 'weekly_search']);
 const MAX_REPEATS = 150;
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -300,6 +309,34 @@ export class Agent {
     return { ok: true, message: `Deleted ${label}.` };
   }
 
+  async reminderTool(input: Record<string, unknown>) {
+    if (input.action === 'list') return { reminders: (await this.d.store.reminders()).map((r) => ({ id: r.id, text: describeReminder(r) })) };
+    if (input.action === 'remove') {
+      if (!(await this.d.store.deleteReminder(String(input.id ?? '')))) throw new Invalid('No reminder with that id. Use action list first.');
+      return { ok: true, removed: input.id };
+    }
+    const title = String(input.title ?? '').trim().slice(0, 80);
+    const days = (Array.isArray(input.days) ? input.days : []).map((x) => WEEKDAY_NAMES.findIndex((n) => n.toLowerCase().startsWith(String(x).toLowerCase().slice(0, 3))));
+    const hour = Number(input.hour);
+    if (!title) throw new Invalid('title is required');
+    if (!days.length || days.includes(-1)) throw new Invalid('days must be weekday names');
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) throw new Invalid('hour must be 0–23');
+    const holiday = ['skip', 'shift'].includes(String(input.holiday)) ? String(input.holiday) as 'skip' | 'shift' : 'none';
+    if ((await this.d.store.reminders()).length >= 30) throw new Invalid('That is already 30 reminders. Remove some first.');
+    this.countWrite();
+    const r = await this.d.store.insertReminder({ title, note: String(input.note ?? '').trim().slice(0, 200), days: [...new Set(days)].sort(), hour,
+      every_weeks: Math.min(4, Math.max(1, Number(input.every_weeks) || 1)), start_date: this.today(), holiday, created_by: this.d.actor });
+    await this.d.store.log(this.d.actor, 'agent addReminder', describeReminder(r));
+    // The next few times it will go off, so the person can see how holidays are handled.
+    const next: string[] = [];
+    for (let i = 0, d = this.today(); i < 60 && next.length < 3; i++, d = addDays(d, 1)) {
+      const f = firesOn(r, d);
+      if (f.fire) next.push(`${prettyDate(d)}${f.note ? ' (moved for a holiday)' : ''}`);
+    }
+    const skippedThisWeek = holiday === 'skip' && days.some((dw) => { const d = addDays(this.today(), (dw - WEEKDAY_NAMES.indexOf(weekdayOf(this.today())) + 7) % 7); return !firesOn(r, d).fire && holidayBefore(d); });
+    return { ok: true, reminder: describeReminder(r), next, ...(skippedThisWeek ? { note: 'This week has a holiday, so it is skipped this week.' } : {}), needs: 'Everyone gets it as a phone notification, so notifications must be on in Household on each phone.' };
+  }
+
   async weeklySearch(input: Record<string, unknown>) {
     const me = this.d.actor.toLowerCase();
     const s = await this.d.store.settings();
@@ -366,6 +403,7 @@ export class Agent {
     if (name === 'add_task') return await this.addTask(input);
     if (name === 'add_repeating_event') return await this.addRepeating(input);
     if (name === 'weekly_search') return await this.weeklySearch(input);
+    if (name === 'reminders') return await this.reminderTool(input);
     if (name === 'save_event_taste') {
       const thing = String(input.thing ?? '').trim().slice(0, 120);
       if (!thing) throw new Invalid('thing is required');

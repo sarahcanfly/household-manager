@@ -3,6 +3,7 @@
 // the evening-before reminder, or the "things are waiting" digest.
 
 import { addDays, zoned } from './domain.ts';
+import { firesOn } from './holidays.ts';
 import { digestText, morningText, tomorrowText, trimSms, weeklyText } from './notify.ts';
 import { smsAddress, type Mailer } from './mail.ts';
 import type { Store } from './store.ts';
@@ -100,6 +101,17 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
   }
   if (due('digest', s.digest?.enabled, s.digest?.hour) && (force === 'digest' || await d.claim('digest', z.date))) {
     await deliver('digest', digestText(w, d.appUrl), !!s.sms?.digest);
+  }
+  // Repeating reminders (trash night and the like): a phone notification at their hour.
+  if (d.push && !force) {
+    let list: Awaited<ReturnType<Store['reminders']>> = [];
+    try { list = await d.store.reminders(); } catch { /* table not there yet */ }
+    for (const r of list.filter((x) => x.hour === z.hour)) {
+      const f = firesOn(r, z.date);
+      if (!f.fire || !(await d.claim(`reminder:${r.id}`, z.date))) continue;
+      try { await d.push({ title: r.title, body: [r.note, f.note].filter(Boolean).join(' ') || 'Reminder', url: d.appUrl, tag: `rem-${r.id}` }); sent.push(`reminder:${r.id}`); }
+      catch (e) { await d.store.log('scheduled', 'reminder error', `${r.title}: ${(e as Error).message}`); }
+    }
   }
   return sent;
 }

@@ -78,6 +78,8 @@ export async function createLiveBackend(cfg) {
     async setTaskDone(id, done) { ok(await sb.from('tasks').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id)); },
     async deleteTask(id) { ok(await sb.from('tasks').delete().eq('id', id)); },
     async restoreTask(t) { ok(await sb.from('tasks').upsert({ id: t.id, ...taskRow(t), done: false, done_at: null, source: t.source || 'manual' })); },
+    async reminders() { return ok(await sb.from('reminders').select('*').order('created_at')) || []; },
+    async deleteReminder(id) { ok(await sb.from('reminders').delete().eq('id', id)); },
     async rateEvent(t) { ok(await sb.from('event_taste').insert({ title: t.title, kind: t.kind || 'event', place: t.where || '', vote: t.vote, how: t.how || 'rated' })); },
     async deleteIdea(id) { ok(await sb.from('ideas').delete().eq('id', id)); },
     async approve(p) { ok(await sb.rpc('approve_pending', { p: pendingPayload(p) })); },
