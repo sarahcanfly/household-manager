@@ -1,0 +1,46 @@
+{
+  "slug": "smith",
+  "household_name": "Jess & Sam",
+  "timezone": "America/New_York",
+  "town": "Natick, MA",
+  "holiday_region": "MA",
+  "supabase_ref": "",
+
+  "people": [
+    { "name": "Jess",    "kind": "adult", "email": "jess@example.com", "gets_emails": true },
+    { "name": "Sam",     "kind": "adult", "email": "sam@example.com",  "gets_emails": true },
+    { "name": "Lily",    "kind": "kid" },
+    { "name": "Max",     "kind": "kid" },
+    { "name": "Grandma", "kind": "other" }
+  ],
+
+  "school_calendars": [
+    {
+      "name": "Elementary",
+      "url": "https://www.example-schools.org/calendar.ics",
+      "for": ["Lily", "Max"],
+      "include": ["No School", "Early Release", "/Memorial Elementary/"],
+      "exclude": ["School Committee", "/High School|HS /"]
+    }
+  ],
+
+  "coparent_calendars": [
+    {
+      "name": "Co-parent",
+      "url": "webcal://p00-caldav.icloud.com/published/2/EXAMPLE",
+      "kids": ["Lily", "Max"],
+      "home_match": "/@ ?Jess/",   "home_label": "Jess's",
+      "away_match": "/@ ?Alex/",   "away_label": "Alex's"
+    }
+  ],
+
+  "interests": "kid-friendly outings for a 6- and 9-year-old, hiking, free festivals; a few things for adults",
+  "live_music": true,
+  "weekly": { "day": "MONDAY", "hour": 7 },
+  "evening_reminder_hour": 18,
+  "morning_hour": 7,
+
+  "reminders": [
+    { "title": "Trash & recycling", "days": ["Thursday"], "hour": 19, "holiday": "shift", "note": "Bins out tonight" }
+  ]
+}

@@ -328,12 +328,13 @@ export class Agent {
       every_weeks: Math.min(4, Math.max(1, Number(input.every_weeks) || 1)), start_date: this.today(), holiday, created_by: this.d.actor });
     await this.d.store.log(this.d.actor, 'agent addReminder', describeReminder(r));
     // The next few times it will go off, so the person can see how holidays are handled.
+    const region = (await this.d.store.settings()).holiday_region ?? 'MA';
     const next: string[] = [];
     for (let i = 0, d = this.today(); i < 60 && next.length < 3; i++, d = addDays(d, 1)) {
-      const f = firesOn(r, d);
+      const f = firesOn(r, d, region);
       if (f.fire) next.push(`${prettyDate(d)}${f.note ? ' (moved for a holiday)' : ''}`);
     }
-    const skippedThisWeek = holiday === 'skip' && days.some((dw) => { const d = addDays(this.today(), (dw - WEEKDAY_NAMES.indexOf(weekdayOf(this.today())) + 7) % 7); return !firesOn(r, d).fire && holidayBefore(d); });
+    const skippedThisWeek = holiday === 'skip' && days.some((dw) => { const d = addDays(this.today(), (dw - WEEKDAY_NAMES.indexOf(weekdayOf(this.today())) + 7) % 7); return !firesOn(r, d, region).fire && holidayBefore(d, region); });
     return { ok: true, reminder: describeReminder(r), next, ...(skippedThisWeek ? { note: 'This week has a holiday, so it is skipped this week.' } : {}), needs: 'Everyone gets it as a phone notification, so notifications must be on in Household on each phone.' };
   }
 

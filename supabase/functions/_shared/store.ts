@@ -19,6 +19,7 @@ export interface Settings {
   morning: { enabled: boolean; hour: number; email: boolean };
   local_events: LocalSettings;
   personal_searches: PersonalSearch[];
+  holiday_region: 'MA' | 'US' | 'NONE';
   notify: string[];
   sms: { enabled: boolean; weekly: boolean; reminders: boolean; digest: boolean; morning?: boolean; max_chars: number; recipients: SmsRecipient[] };
   push: { weekly: boolean; reminders: boolean; digest: boolean };
@@ -36,6 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   morning: { enabled: true, hour: 7, email: false },
   local_events: DEFAULT_LOCAL,
   personal_searches: [],
+  holiday_region: 'MA',
   notify: [],
   sms: { enabled: false, weekly: true, reminders: true, digest: false, max_chars: 600, recipients: [] },
   push: { weekly: true, reminders: true, digest: true },

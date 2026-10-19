@@ -107,7 +107,7 @@ export async function runNotify(d: NotifyDeps, force?: NotifyKind): Promise<stri
     let list: Awaited<ReturnType<Store['reminders']>> = [];
     try { list = await d.store.reminders(); } catch { /* table not there yet */ }
     for (const r of list.filter((x) => x.hour === z.hour)) {
-      const f = firesOn(r, z.date);
+      const f = firesOn(r, z.date, s.holiday_region ?? 'MA');
       if (!f.fire || !(await d.claim(`reminder:${r.id}`, z.date))) continue;
       try { await d.push({ title: r.title, body: [r.note, f.note].filter(Boolean).join(' ') || 'Reminder', url: d.appUrl, tag: `rem-${r.id}` }); sent.push(`reminder:${r.id}`); }
       catch (e) { await d.store.log('scheduled', 'reminder error', `${r.title}: ${(e as Error).message}`); }

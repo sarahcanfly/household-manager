@@ -59,3 +59,10 @@ test('the agent sets up a reminder and says when it will go off', async () => {
   await new Agent({ store, claude: c2, actor: 'sarah@x.com', notify: async () => {} }).ask('stop the trash reminder', []);
   assert.equal(store.rems.length, 0);
 });
+
+test('holiday region: Patriots\' Day only in Massachusetts; NONE never moves pickup', () => {
+  assert.equal(H.holidayBefore('2026-04-24', 'MA').name, "Patriots' Day");
+  assert.equal(H.holidayBefore('2026-04-24', 'US'), null);
+  assert.equal(H.holidayBefore('2026-10-16', 'NONE'), null);
+  assert.equal(H.firesOn(trash('skip'), '2026-10-16', 'NONE').fire, true);
+});

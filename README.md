@@ -33,3 +33,8 @@ reminders by email and text.
 
 Anything read from email, photos, documents or feeds only ever goes to the Inbox. Only a person
 approves it onto the calendar.
+
+
+## Setting it up for other families
+
+See `onboarding/CHECKLIST.md`: an intake form, `scripts/new_family.py` (turns a family's answers into their setup files), and one-push updates to every family's copy (`deploy/families.json`).

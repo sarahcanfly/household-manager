@@ -51,3 +51,41 @@ jobs:
       - name: Deploy server functions
         if: steps.check.outputs.ready == 'true'
         run: supabase functions deploy --project-ref "$PROJECT_REF"
+
+  # Every family's own copy gets the same update. Each family is a GitHub environment
+  # (Settings → Environments) holding its SUPABASE_PROJECT_REF and SUPABASE_DB_PASSWORD;
+  # deploy/families.json lists the environment names, e.g. ["smith", "lee"].
+  families:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.read.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: echo "list=$(jq -c '[.[] | select(type == "string" and test("^[a-z0-9-]+$"))]' deploy/families.json)" >> "$GITHUB_OUTPUT"
+
+  deploy-family:
+    needs: families
+    if: needs.families.outputs.list != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        family: ${{ fromJson(needs.families.outputs.list) }}
+    environment: ${{ matrix.family }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Link ${{ matrix.family }}
+        run: supabase link --project-ref "$PROJECT_REF"
+      - name: Update ${{ matrix.family }} database
+        run: supabase db push --include-all
+      - name: Deploy ${{ matrix.family }} server functions
+        run: supabase functions deploy --project-ref "$PROJECT_REF"

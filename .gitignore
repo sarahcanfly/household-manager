@@ -5,3 +5,8 @@ private/
 .env
 .DS_Store
 test-results/
+
+# Families' generated setup files hold their emails and calendar links: never commit them.
+onboarding/out/
+onboarding/*.json
+!onboarding/family.example.json

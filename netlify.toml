@@ -1,7 +1,7 @@
-# The phone app is plain files in web/: nothing to build.
+# The phone app is plain files in web/. The only build step writes config.js for this family (scripts/write_config.sh).
 [build]
   publish = "web"
-  command = "true"
+  command = "sh scripts/write_config.sh"
 
 [[headers]]
   for = "/*"

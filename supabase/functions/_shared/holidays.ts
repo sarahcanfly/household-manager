@@ -17,8 +17,11 @@ function nth(y: number, m: number, wd: number, n: number): string {
 }
 
 export interface Holiday { date: string; name: string }
+/** Which holidays move pickup: 'MA' adds Patriots' Day to the US list; 'NONE' means pickup never moves. */
+export type HolidayRegion = 'MA' | 'US' | 'NONE';
 
-export function collectionHolidays(year: number): Holiday[] {
+export function collectionHolidays(year: number, region: HolidayRegion = 'MA'): Holiday[] {
+  if (region === 'NONE') return [];
   return [
     { date: ymd(year, 1, 1), name: "New Year's Day" },
     { date: nth(year, 1, 1, 3), name: 'Martin Luther King Jr. Day' },
@@ -32,13 +35,13 @@ export function collectionHolidays(year: number): Holiday[] {
     { date: ymd(year, 11, 11), name: "Veterans' Day" },
     { date: nth(year, 11, 4, 4), name: 'Thanksgiving' },
     { date: ymd(year, 12, 25), name: 'Christmas' },
-  ].filter((h) => dow(h.date) >= 1 && dow(h.date) <= 5);   // weekend holidays move nothing
+  ].filter((h) => (region === 'MA' || h.name !== "Patriots' Day") && dow(h.date) >= 1 && dow(h.date) <= 5);   // weekend holidays move nothing
 }
 
 /** A weekday holiday from Monday of `date`'s week up to `date` itself, if any. */
-export function holidayBefore(date: string): Holiday | null {
+export function holidayBefore(date: string, region: HolidayRegion = 'MA'): Holiday | null {
   const monday = addDays(date, -((dow(date) + 6) % 7));
-  return collectionHolidays(Number(date.slice(0, 4))).find((h) => h.date >= monday && h.date <= date) ?? null;
+  return collectionHolidays(Number(date.slice(0, 4)), region).find((h) => h.date >= monday && h.date <= date) ?? null;
 }
 
 export interface Reminder {
@@ -54,14 +57,14 @@ const onSchedule = (r: Reminder, date: string) => {
 };
 
 /** Whether a reminder goes off on `date`, and a note when a holiday moved it. */
-export function firesOn(r: Reminder, date: string): { fire: boolean; note?: string } {
-  const h = holidayBefore(date);
+export function firesOn(r: Reminder, date: string, region: HolidayRegion = 'MA'): { fire: boolean; note?: string } {
+  const h = holidayBefore(date, region);
   if (onSchedule(r, date)) {
     if (!h || r.holiday === 'none') return { fire: true };
     return { fire: false };   // skipped, or moved to tomorrow
   }
   if (r.holiday === 'shift') {
-    const y = addDays(date, -1), hy = holidayBefore(y);
+    const y = addDays(date, -1), hy = holidayBefore(y, region);
     if (onSchedule(r, y) && hy) return { fire: true, note: `A day late this week because of ${hy.name}.` };
   }
   return { fire: false };
