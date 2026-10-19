@@ -10,7 +10,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,7 +22,7 @@ jobs:
 
   deploy:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -44,7 +44,13 @@ jobs:
           version: latest
       - name: Link project
         if: steps.check.outputs.ready == 'true'
-        run: supabase link --project-ref "$PROJECT_REF"
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! supabase link --project-ref "$PROJECT_REF" 2>&1 | tee link.log; then
+            echo "::error title=Supabase link failed::$(tail -n 8 link.log | tr '\n' ' ' | cut -c1-900)"
+            exit 1
+          fi
       - name: Update database
         if: steps.check.outputs.ready == 'true'
         run: supabase db push --include-all
@@ -57,7 +63,7 @@ jobs:
   # deploy/families.json lists the environment names, e.g. ["smith", "lee"].
   families:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       list: ${{ steps.read.outputs.list }}
     steps:
@@ -68,7 +74,7 @@ jobs:
   deploy-family:
     needs: families
     if: needs.families.outputs.list != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +90,13 @@ jobs:
         with:
           version: latest
       - name: Link ${{ matrix.family }}
-        run: supabase link --project-ref "$PROJECT_REF"
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! supabase link --project-ref "$PROJECT_REF" 2>&1 | tee link.log; then
+            echo "::error title=Supabase link failed (${{ matrix.family }})::$(tail -n 8 link.log | tr '\n' ' ' | cut -c1-900)"
+            exit 1
+          fi
       - name: Update ${{ matrix.family }} database
         run: supabase db push --include-all
       - name: Deploy ${{ matrix.family }} server functions
