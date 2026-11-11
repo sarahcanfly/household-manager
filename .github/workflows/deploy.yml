@@ -56,7 +56,7 @@ jobs:
         run: supabase db push --include-all --remote
       - name: Deploy server functions
         if: steps.check.outputs.ready == 'true'
-        run: supabase functions deploy --project-ref "$PROJECT_REF"
+        run: supabase functions deploy --project-ref "$PROJECT_REF" --yes
 
   # Every family's own copy gets the same update. Each family is a GitHub environment
   # (Settings → Environments) holding its SUPABASE_PROJECT_REF and SUPABASE_DB_PASSWORD;
