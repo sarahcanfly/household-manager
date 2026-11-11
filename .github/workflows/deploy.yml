@@ -100,4 +100,4 @@ jobs:
       - name: Update ${{ matrix.family }} database
         run: supabase db push --include-all --remote
       - name: Deploy ${{ matrix.family }} server functions
-        run: supabase functions deploy --project-ref "$PROJECT_REF"
+        run: supabase functions deploy --project-ref "$PROJECT_REF" --yes
