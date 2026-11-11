@@ -39,6 +39,7 @@ export function createDemoBackend() {
     ideas: [
       { id: uid(), title: 'Science museum night', date: day(12), time: '18:00', for: ['a1', 'a2', 'k1'], cost: '$25 each', link: '', note: '' },
       { id: uid(), title: 'Try the new ramen place', date: '', time: '', for: ['a1', 'a2'], cost: '', link: '', note: 'Jordan heard it is great' },
+      { id: uid(), title: 'Town tree lighting', date: day(-3), time: '18:00', for: ['a1', 'a2', 'k1'], cost: 'Free', link: '', note: 'The date has gone by' },
     ],
   };
   const settings = { morning: { enabled: true, hour: 7, email: false }, notify: ['alex@example.com'], weekly: { enabled: true, day: 'MONDAY', hour: 7 }, reminders: { enabled: true, hour: 18 }, digest: { enabled: true, hour: 19 }, timezone: 'America/New_York' };

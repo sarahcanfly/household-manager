@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { domain as d, members, ev, plus } from './helpers.mjs';
 
+test('same event title ignores case and treats a longer form as the same event', () => {
+  assert.equal(d.sameEventTitle('No School', 'no school'), true);
+  assert.equal(d.sameEventTitle('No School', 'No School: Veterans Day'), true);
+  assert.equal(d.sameEventTitle('Longfellow Lumina', 'Longfellow Lumina openings'), true);
+  assert.equal(d.sameEventTitle('Soccer', 'Soccer practice'), false);
+  assert.equal(d.sameEventTitle('No School', 'Early Release'), false);
+});
+
 test('timezone helpers', () => {
   // 2026-07-01 03:30 UTC is still June 30 in New York
   assert.equal(d.todayIn('America/New_York', new Date('2026-07-01T03:30:00Z')), '2026-06-30');

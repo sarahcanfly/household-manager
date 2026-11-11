@@ -92,12 +92,11 @@ a { color: var(--accent); }
 .tab .count { font-weight: 400; opacity: 0.8; margin-left: 4px; }
 
 /* ---------- people filter ---------- */
-.filters { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 10px; scrollbar-width: none; }
-.filters::-webkit-scrollbar { display: none; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 10px; max-width: 100%; }
 .fchip, .chip {
-  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; white-space: nowrap;
   border: 1px solid var(--line); background: var(--surface); border-radius: 999px;
-  padding: 6px 12px; font-size: 0.9rem;
+  padding: 6px 12px; font-size: 0.9rem; max-width: 100%;
 }
 .fchip[aria-pressed="true"], .chip[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: var(--bg); }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
@@ -178,6 +177,7 @@ a { color: var(--accent); }
 /* ---------- shelf, inbox, ask ---------- */
 .note { color: var(--muted); font-size: 0.92rem; margin: 6px 0 14px; max-width: 60ch; }
 .card { background: var(--surface); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+.card.passed { opacity: 0.72; }
 .card.picked { box-shadow: inset 0 0 0 2px var(--accent); }
 .cardtitle { font-weight: 700; }
 .cardwhen { color: var(--accent); font-size: 0.9rem; margin-top: 2px; }

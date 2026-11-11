@@ -12,7 +12,7 @@
 //   (match is plain text or a /pattern/; add "where": "Jenn's" when the title has no "@ Name")
 //   "horizon_days": 120 }
 
-import { addDays, type Member } from './domain.ts';
+import { addDays, sameEventTitle, type Member } from './domain.ts';
 import { matches, type IcsItem, type FeedRules } from './ics.ts';
 
 export interface CustodyRule { match: string; with_us: string[]; where?: string }
@@ -62,19 +62,42 @@ export function custodyPlace(title: string): string {
 
 const sameSet = (a: string[], b: string[]) => [...a].sort().join(',') === [...b].sort().join(',');
 
+/** Same calendar slot: same day and time, and the same title (including a longer form of it). */
+export function sameSlot(a: { title: string; date: string; time: string }, b: { title: string; date: string; time: string }) {
+  return a.date === b.date && (a.time || '') === (b.time || '') && sameEventTitle(a.title, b.title);
+}
+
 /**
  * Insert, update and delete needed to make the calendar match the feed from `from` on.
  * The feed owns title, date, time, place, note, who and custody; a driver picked in the
  * app is kept (except custody days, which never need one).
+ * A second copy of an event already on the calendar (this feed or anywhere else) is not inserted.
+ * `taken` is events that belong to someone else, so this feed must not add them again.
  */
-export function planSync(desired: FeedRow[], existing: ExistingRow[], from: string) {
+export function planSync(
+  desired: FeedRow[], existing: ExistingRow[], from: string,
+  taken: { title: string; date: string; time: string }[] = [],
+) {
   const want = desired.filter((d) => d.date >= from);
   const have = new Map(existing.filter((e) => e.date >= from).map((e) => [e.uid, e]));
+  const wantUids = new Set(want.map((d) => d.uid));
+  const slot = (r: { title: string; date: string; time: string }) => ({ title: r.title, date: r.date, time: r.time || '' });
+  // Copies already on the calendar block a new insert, but are not removed: a row the
+  // household already has stays until someone deletes it.
+  const slots = [
+    ...taken.filter((e) => e.date >= from).map(slot),
+    ...[...have.values()].filter((e) => wantUids.has(e.uid)).map(slot),
+  ];
   const insert: FeedRow[] = [];
   const update: { id: string; patch: Partial<FeedRow> }[] = [];
   for (const d of want) {
     const e = have.get(d.uid);
-    if (!e) { insert.push(d); continue; }
+    if (!e) {
+      if (slots.some((s) => sameSlot(s, d))) continue;
+      insert.push(d);
+      slots.push(slot(d));
+      continue;
+    }
     have.delete(d.uid);
     const patch: Partial<FeedRow> = {};
     if (e.title !== d.title) patch.title = d.title;
@@ -96,6 +119,8 @@ export interface SyncStore {
   insertFeedEvents(feed: string, rows: FeedRow[]): Promise<void>;
   patchFeedEvent(id: string, patch: Partial<FeedRow>): Promise<void>;
   deleteEvents(ids: string[]): Promise<void>;
+  /** Events from other sources, so a feed does not add a second copy of one the household already has. */
+  otherEvents?(feed: string, from: string): Promise<{ title: string; date: string; time: string }[]>;
 }
 
 export async function syncFeed(store: SyncStore, feed: SyncFeedConfig, items: IcsItem[], members: Member[], today: string) {
@@ -103,7 +128,9 @@ export async function syncFeed(store: SyncStore, feed: SyncFeedConfig, items: Ic
   const existing = await store.feedEvents(feed.name);
   // A calendar that suddenly reads as empty is far more likely a hiccup than a real wipe.
   if (!desired.length && existing.length) throw new Error('the calendar came back empty, so nothing was removed');
-  const plan = planSync(desired, existing, addDays(today, -14));
+  const from = addDays(today, -14);
+  const taken = store.otherEvents ? await store.otherEvents(feed.name, from) : [];
+  const plan = planSync(desired, existing, from, taken);
   if (plan.insert.length) await store.insertFeedEvents(feed.name, plan.insert);
   for (const u of plan.update) await store.patchFeedEvent(u.id, u.patch);
   if (plan.remove.length) await store.deleteEvents(plan.remove);

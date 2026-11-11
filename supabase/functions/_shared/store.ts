@@ -1,7 +1,7 @@
 // Everything the functions read and write, behind one interface so the agent
 // and the jobs can be tested against an in-memory copy.
 
-import { normEvent, normIdea, normMember, normPending, normTask, addDays, type Ev, type Idea, type Task, type World } from './domain.ts';
+import { normEvent, normIdea, normMember, normPending, normTask, addDays, hhmm, type Ev, type Idea, type Task, type World } from './domain.ts';
 import { eq, type Rest } from './db.ts';
 import type { FeedRules } from './ics.ts';
 import type { ExistingRow, FeedRow, SyncFeedConfig, SyncStore } from './feedsync.ts';
@@ -170,6 +170,11 @@ export class RestStore implements Store {
   async feedEvents(feed: string): Promise<ExistingRow[]> {
     const rows = await this.db.select('events', `select=*&feed=${eq(feed)}`);
     return rows.map((r) => ({ ...normEvent(r), uid: String(r.feed_uid ?? '') }));
+  }
+  async otherEvents(feed: string, from: string) {
+    const rows = await this.db.select<{ title: string; date: string; time: string | null }>(
+      'events', `select=title,date,time&date=gte.${from}&or=(feed.is.null,feed.neq.${encodeURIComponent(feed)})`);
+    return rows.map((r) => ({ title: String(r.title ?? ''), date: String(r.date).slice(0, 10), time: hhmm(r.time) }));
   }
   async insertFeedEvents(feed: string, rows: FeedRow[]) {
     // One request, so the calendar sync is triggered once rather than once per event.

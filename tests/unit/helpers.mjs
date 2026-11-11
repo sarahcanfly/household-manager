@@ -48,15 +48,18 @@ export class MemoryStore {
   async stage(rows) {
     const today = domain.todayIn(this.s.timezone);
     let added = 0, past = 0, dupe = 0;
+    const same = (a, b) => domain.sameEventTitle(a.title, b.title);
     for (const r of rows) {
       if (r.date < today) { past++; continue; }
-      const key = (x) => `${x.title.toLowerCase()}|${x.date}|${x.time}`;
-      if (this.events.some((e) => key(e) === key(r)) || this.pending.some((p) => key(p) === key(r))) { dupe++; continue; }
+      const time = r.time || '';
+      const eventLike = (e) => e.date === r.date && (e.time || '') === time && same(e, r);
+      if (this.events.some(eventLike) || this.pending.some(eventLike) || this.ideas.some((i) => i.date === r.date && same(i, r))) { dupe++; continue; }
       this.pending.push({ id: 'p' + (++this.n), ...r }); added++;
     }
     return { added, past, dupe };
   }
   async feedEvents(feed) { return structuredClone(this.events.filter((e) => e.feed === feed).map((e) => ({ ...e, uid: e.feed_uid }))); }
+  async otherEvents(feed, from) { return this.events.filter((e) => e.date >= from && e.feed !== feed).map((e) => ({ title: e.title, date: e.date, time: e.time || '' })); }
   async insertFeedEvents(feed, rows) { for (const r of rows) { const { uid, ...rest } = r; this.events.push(ev({ ...rest, id: 'f' + (++this.n), feed, feed_uid: uid, source: `sync:${feed}` })); } this.batches = (this.batches || 0) + 1; }
   async patchFeedEvent(id, patch) { const e = this.events.find((x) => x.id === id); if (e) Object.assign(e, patch); }
   async deleteEvents(ids) { this.events = this.events.filter((e) => !ids.includes(e.id)); }
