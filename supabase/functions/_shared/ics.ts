@@ -5,6 +5,37 @@ import { addDays, wallToUtc, weekdayOf, zoned, type Member } from './domain.ts';
 
 // uid identifies one day of one event in the source calendar, so a synced copy can be updated or removed later.
 export interface IcsItem { title: string; date: string; time: string; place: string; note: string; for_ids: string[]; uid: string }
+
+/**
+ * iCalUID written onto events this app creates in Google Calendar.
+ * A feed of that calendar comes back with the same UID. Drop those so the
+ * event is not imported a second time. The date suffix parseIcs adds is ignored.
+ */
+export function householdIcalUid(eventId: string): string {
+  const safe = String(eventId).replace(/[^A-Za-z0-9_-]/g, '') || 'event';
+  return `hm-${safe}@household.app`;
+}
+
+export function isHouseholdIcalUid(uid: string): boolean {
+  return /^hm-[A-Za-z0-9_-]+@household\.app$/i.test(String(uid).split('|')[0].trim());
+}
+
+/** True when this feed row is an event we already pushed (our iCalUID, or a Google id we stored). */
+export function isPushedCopy(uid: string, googleIds: Iterable<string>): boolean {
+  const raw = String(uid).split('|')[0].trim();
+  if (isHouseholdIcalUid(raw)) return true;
+  if (raw.toLowerCase().endsWith('@google.com')) {
+    const id = raw.slice(0, -'@google.com'.length).toLowerCase();
+    for (const known of googleIds) if (known.toLowerCase() === id) return true;
+  }
+  return false;
+}
+
+export function dropPushedCopies<T extends { uid: string }>(items: T[], googleIds: Iterable<string>): T[] {
+  const ids = [...googleIds];
+  return items.filter((it) => !isPushedCopy(it.uid, ids));
+}
+
 export interface FeedRules {
   exclude?: string[]; include?: string[];
   rename?: { from: string; to: string }[];

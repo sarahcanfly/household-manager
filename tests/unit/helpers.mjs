@@ -64,6 +64,7 @@ export class MemoryStore {
   async patchFeedEvent(id, patch) { const e = this.events.find((x) => x.id === id); if (e) Object.assign(e, patch); }
   async deleteEvents(ids) { this.events = this.events.filter((e) => !ids.includes(e.id)); }
   async log(actor, action, detail) { this.logs.push({ actor, action, detail }); }
+  async googleEventIds() { return this.googleIds || []; }
 }
 
 /** Claude stand-in: replays scripted replies and records every request. */

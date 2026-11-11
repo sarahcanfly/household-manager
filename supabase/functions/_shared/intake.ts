@@ -4,7 +4,7 @@
 
 import { todayIn, weekdayOf, type Member } from './domain.ts';
 import { buildPrompt, parseExtraction, type ExtractKind, type Extracted } from './extract.ts';
-import { applyRules, looksLikeIcs, mergeRules, parseIcs, type IcsItem } from './ics.ts';
+import { applyRules, dropPushedCopies, looksLikeIcs, mergeRules, parseIcs, type IcsItem } from './ics.ts';
 import { textOf, type ClaudeFn } from './claude.ts';
 import type { Feed, Settings, StageRow, Store, DocSource } from './store.ts';
 import { syncFeed } from './feedsync.ts';
@@ -29,9 +29,17 @@ async function stage(d: IntakeDeps, rows: StageRow[], parsed: boolean): Promise<
   return { found: rows.length, ...r, parsed };
 }
 
+async function pushedIds(store: Store): Promise<string[]> {
+  try { return await store.googleEventIds(); }
+  catch { return []; }
+}
+
 export async function intakeIcs(d: IntakeDeps, text: string, source: string, ref: string, extra: Partial<Feed> = {}): Promise<IntakeResult> {
   const { s, members, today } = await context(d);
-  const items = applyRules(parseIcs(text, s.timezone, today, (s.max_recurrence_weeks || 4) * 7), mergeRules(s.ics_rules ?? {}, extra), members);
+  const items = dropPushedCopies(
+    applyRules(parseIcs(text, s.timezone, today, (s.max_recurrence_weeks || 4) * 7), mergeRules(s.ics_rules ?? {}, extra), members),
+    await pushedIds(d.store),
+  );
   return await stage(d, toStage(items, source, ref), true);
 }
 
@@ -75,13 +83,20 @@ async function fingerprint(text: string): Promise<string> {
 export async function pollSources(d: PollDeps, actor: string): Promise<string[]> {
   const s = await d.store.settings();
   const report: string[] = [];
+  const own = await pushedIds(d.store);
   for (const f of s.feeds ?? []) {
     try {
       const text = await d.fetchText(f.url);
       if (!looksLikeIcs(text)) throw new Error('not a calendar file');
       if (f.mode === 'sync') {
         const [w, today] = [await d.store.world(), todayIn(s.timezone, d.now ?? new Date())];
-        const items = applyRules(parseIcs(text, s.timezone, today, f.horizon_days ?? 120), mergeRules(s.ics_rules ?? {}, f), w.members);
+        const ruled = applyRules(parseIcs(text, s.timezone, today, f.horizon_days ?? 120), mergeRules(s.ics_rules ?? {}, f), w.members);
+        const items = dropPushedCopies(ruled, own);
+        // A feed that is only events we already wrote is not an empty calendar. Leave the week alone.
+        if (!items.length && ruled.length) {
+          report.push(`${f.name}: skipped ${ruled.length} already copied from this app`);
+          continue;
+        }
         const r = await syncFeed(d.store, f, items, w.members, today);
         report.push(`${f.name}: added ${r.added}, updated ${r.updated}, removed ${r.removed}`);
       } else {

@@ -47,10 +47,24 @@ select pg_temp.check((select count(*) from public.members) = 4, 'member sees mem
 select pg_temp.check((select count(*) from public.settings) > 5, 'member sees settings');
 -- cannot see server bookkeeping
 select pg_temp.check((select count(*) from public.cal_map) = 0, 'cal_map hidden (no policy)');
+select pg_temp.check((select count(*) from public.google_accounts) = 0, 'google_accounts hidden (no policy)');
+select pg_temp.check((select count(*) from public.personal_cal_map) = 0, 'personal_cal_map hidden (no policy)');
 do $$ begin
   insert into public.cal_map values ('e1','x','h',false);
   raise exception 'FAIL: cal_map insert should be refused';
 exception when insufficient_privilege then raise notice 'ok - cal_map not writable by app';
+end $$;
+do $$ begin
+  insert into public.google_accounts (email, refresh_token) values ('alex@x.com', 'secret');
+  raise exception 'FAIL: google_accounts insert should be refused';
+exception when insufficient_privilege then raise notice 'ok - google_accounts not writable by app';
+end $$;
+do $$ begin
+  insert into public.personal_cal_map (email, event_id, cal_event_id, hash, all_day) values ('alex@x.com', 'e1', 'g1', 'h', false);
+  raise exception 'FAIL: personal_cal_map insert should be refused';
+exception
+  when insufficient_privilege then raise notice 'ok - personal_cal_map not writable by app';
+  when foreign_key_violation then raise notice 'ok - personal_cal_map not writable by app';
 end $$;
 do $$ begin
   perform public.stage_pending('[]');

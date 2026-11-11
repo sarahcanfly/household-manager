@@ -126,6 +126,41 @@ test('sync: an empty calendar never wipes events, and old events are left alone'
   assert.equal(store.events.length, before);
 });
 
+test('a feed does not re-import events this app already wrote to Google', async () => {
+  const copies = ['BEGIN:VCALENDAR',
+    'BEGIN:VEVENT', 'UID:hm-e1@household.app', 'SUMMARY:Soccer practice (Leo) · Alex', `DTSTART;VALUE=DATE:${d(plus(6))}`, 'LOCATION:Riverside field', 'END:VEVENT',
+    'BEGIN:VEVENT', 'UID:abc123@google.com', 'SUMMARY:Piano recital', `DTSTART;VALUE=DATE:${d(plus(7))}`, 'END:VEVENT',
+    'END:VCALENDAR'].join('\n');
+  const mixed = copies.replace('END:VCALENDAR', `BEGIN:VEVENT\nUID:school-1\nSUMMARY:Picture day\nDTSTART;VALUE=DATE:${d(plus(8))}\nEND:VEVENT\nEND:VCALENDAR`);
+  const store = new MemoryStore({ settings: { feeds: [{ name: 'Sarah', url: 'https://cal/x.ics', mode: 'sync' }] } });
+  store.googleIds = ['abc123'];
+  const report = await pollSources({
+    store, claude: async () => { throw new Error('no Claude needed'); },
+    fetchText: async () => copies, driveText: async () => '', driveBase64: async () => '',
+  }, 'scheduled');
+  assert.match(report[0], /skipped 2 already copied/);
+  assert.equal(store.events.length, 0, 'a feed of only our copies adds nothing');
+
+  store.s.feeds = [{ name: 'Sarah', url: 'https://cal/x.ics', mode: 'sync' }];
+  const added = await pollSources({
+    store, claude: async () => { throw new Error('no Claude needed'); },
+    fetchText: async () => mixed, driveText: async () => '', driveBase64: async () => '',
+  }, 'scheduled');
+  assert.match(added[0], /added 1/);
+  assert.equal(store.events.length, 1);
+  assert.equal(store.events[0].title, 'Picture day');
+
+  const inbox = new MemoryStore({ settings: { feeds: [{ name: 'Sarah', url: 'https://cal/x.ics' }] } });
+  inbox.googleIds = ['abc123'];
+  const queued = await pollSources({
+    store: inbox, claude: async () => { throw new Error('no Claude needed'); },
+    fetchText: async () => mixed, driveText: async () => '', driveBase64: async () => '',
+  }, 'scheduled');
+  assert.match(queued[0], /queued 1/);
+  assert.equal(inbox.pending.length, 1);
+  assert.equal(inbox.pending[0].title, 'Picture day');
+});
+
 test('poll routes a sync feed straight to the calendar and an ordinary feed to the inbox', async () => {
   const today = plus(0);
   const school = `BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Picture day\nDTSTART;VALUE=DATE:${d(plus(6))}\nEND:VEVENT\nEND:VCALENDAR`;

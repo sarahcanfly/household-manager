@@ -60,6 +60,20 @@ test('feed rules: rename, exclude, tag by school and sport', () => {
   assert.deepEqual(only.map((o) => o.title).sort(), ['No School', 'Oakwood Middle School Open House']);
 });
 
+test('events this app wrote to Google are recognizable and can be dropped', () => {
+  assert.equal(ics.householdIcalUid('e1'), 'hm-e1@household.app');
+  assert.equal(ics.householdIcalUid('a.b'), 'hm-ab@household.app');
+  assert.equal(ics.isHouseholdIcalUid('hm-e1@household.app|2026-11-12'), true);
+  assert.equal(ics.isPushedCopy('abc123@google.com|2026-11-12', ['abc123']), true);
+  assert.equal(ics.isPushedCopy('school-1|2026-11-12', ['abc123']), false);
+  const items = [
+    { uid: 'hm-e1@household.app|2026-11-12', title: 'Soccer' },
+    { uid: 'abc123@google.com|2026-11-13', title: 'Piano' },
+    { uid: 'school-1|2026-11-14', title: 'Picture day' },
+  ];
+  assert.deepEqual(ics.dropPushedCopies(items, ['ABC123']).map((i) => i.title), ['Picture day']);
+});
+
 test('include and tag rules accept /patterns/ so early release can be limited to school levels', () => {
   const titles = ['Early Release: P, E (PC), M, H (PD)', 'Early Release: M (PD), P, E, H (PC)', 'Early Release: H (PD)',
     'Early Release:  E (PD), M,H (PC)  No School P (Screening/PD)', 'Early Release: H (PD) No School: E, M',

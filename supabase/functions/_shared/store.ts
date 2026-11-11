@@ -78,6 +78,8 @@ export interface Store extends SyncStore {
   redeemToken(token: string): Promise<{ action: 'update' | 'delete'; args: Record<string, unknown> } | null>;
   stage(rows: StageRow[]): Promise<StageResult>;
   log(actor: string, action: string, detail: string): Promise<void>;
+  /** Google event ids this app created, so a feed of that calendar is not imported again. */
+  googleEventIds(): Promise<string[]>;
   setSetting(key: string, value: unknown): Promise<void>;
   reminders(): Promise<Reminder[]>;
   insertReminder(r: Omit<Reminder, 'id'> & { created_by: string }): Promise<Reminder>;
@@ -194,5 +196,15 @@ export class RestStore implements Store {
   }
   async log(actor: string, action: string, detail: string) {
     try { await this.db.insert('log', { actor, action, detail: detail.slice(0, 2000) }); } catch (e) { console.error('log failed', e); }
+  }
+
+  async googleEventIds(): Promise<string[]> {
+    const from = async (table: string) => {
+      try {
+        const rows = await this.db.select<{ cal_event_id: string }>(table, 'select=cal_event_id');
+        return rows.map((r) => r.cal_event_id).filter(Boolean);
+      } catch { return []; }
+    };
+    return [...await from('personal_cal_map'), ...await from('cal_map')];
   }
 }

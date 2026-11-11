@@ -10,6 +10,8 @@ export const PAST_DAYS = 14, FUTURE_DAYS = 400, DURATION_MIN = 60, REMINDER_MIN 
 export interface Desired {
   id: string; title: string; description: string; place: string;
   date: string; time: string; endTime?: string; allDay: boolean; colorId: string; hash: string;
+  /** Set on a personal calendar so a feed of that calendar can be recognized and not imported again. */
+  icalUid?: string;
 }
 
 export async function sha256(s: string): Promise<string> {
@@ -74,6 +76,7 @@ export function gcalBody(d: Desired, tz: string): Record<string, unknown> {
   const base = {
     summary: d.title, description: d.description, location: d.place || '', colorId: d.colorId,
     extendedProperties: { private: { hmId: d.id } },
+    ...(d.icalUid ? { iCalUID: d.icalUid } : {}),
   };
   if (d.allDay) {
     return { ...base, start: { date: d.date }, end: { date: addDays(d.date, 1) }, reminders: { useDefault: false, overrides: [] } };
@@ -92,6 +95,8 @@ export interface MapRow { event_id: string; cal_event_id: string; hash: string; 
 export interface SyncDeps {
   world: World; today: string; tz: string;
   map: MapRow[];
+  /** When set, write these instead of building the shared-calendar wording. */
+  planned?: Desired[];
   exists(calId: string): Promise<boolean>;
   create(body: Record<string, unknown>): Promise<string>;          // returns calendar event id
   update(calId: string, body: Record<string, unknown>): Promise<void>;
@@ -104,7 +109,7 @@ export interface SyncDeps {
 export interface SyncResult { created: number; updated: number; recreated: number; deleted: number; deferred: number; errors: number; stopped?: string }
 
 export async function runSync(d: SyncDeps): Promise<SyncResult> {
-  const desired = await desiredEvents(d.world, d.today);
+  const desired = d.planned ?? await desiredEvents(d.world, d.today);
   const map = new Map(d.map.map((r) => [r.event_id, r]));
   const known = new Set(d.world.events.map((e) => e.id));
   const r: SyncResult = { created: 0, updated: 0, recreated: 0, deleted: 0, deferred: 0, errors: 0 };
