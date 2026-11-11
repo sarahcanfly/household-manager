@@ -62,6 +62,14 @@ function span(e, short) {
   return a.slice(-n) === b.slice(-n) ? `${a.slice(0, -n)}–${b}` : `${a}–${b}`;
 }
 const longDate = (key) => { const d = parseYmd(key); return `${DAYS[d.getDay()].slice(0, 3)} ${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+/** "Fri Nov 20", or "Due · Fri Nov 20" on a to-do. Blank or unreadable dates keep a plain label. */
+function whenLabel(key, due) {
+  const prefix = due ? 'Due' : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(key || ''))) return prefix || 'Date';
+  const d = parseYmd(key);
+  const text = `${DAYS[d.getDay()].slice(0, 3)} ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  return prefix ? `${prefix} · ${text}` : text;
+}
 const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
 const member = (id) => state.members.find((m) => m.id === id) || null;
@@ -210,7 +218,7 @@ function render() {
 function renderGate() {
   if (gate === 'signin') {
     root.innerHTML = '<div class="gate"><h1>Household</h1>'
-      + '<p class="note">Sign in with the email and password set up for you in Supabase.</p>'
+      + '<p class="note">Sign in with the email and password for your household.</p>'
       + '<form data-form="signin">'
       + '<div class="field"><label for="g-email">Email</label><input type="email" id="g-email" autocomplete="username" required data-autofocus></div>'
       + '<div class="field"><label for="g-pass">Password</label><input type="password" id="g-pass" autocomplete="current-password" required></div>'
@@ -364,7 +372,7 @@ function monthHtml() {
   });
   list += '</div>';
 
-  const maybes = sortedIdeas().filter((it) => it.date && it.date.slice(0, 7) === prefix && (!filterId || (it.for || []).includes(filterId)));
+  const maybes = sortedIdeas().filter((it) => it.date && it.date >= today && it.date.slice(0, 7) === prefix && (!filterId || (it.for || []).includes(filterId)));
   const maybeBlock = maybes.length ? '<div class="slist"><div class="shead">Maybe, on the shelf</div>'
     + maybes.map((it) => `<div class="pev"><span class="dot" style="${barStyle(it.for || [])}"></span><span><span class="ptime">${esc(longDate(it.date))}${it.time ? ' ' + pretty(it.time, true) : ''}</span> ${esc(it.title)} <span class="pwho">${esc([names(it.for || []), it.cost].filter(Boolean).join(', '))}</span></span></div>`).join('')
     + '</div>' : '';
@@ -378,18 +386,33 @@ function monthHtml() {
     + '<button data-act="print">Print</button></span></div>' + grid + list + maybeBlock;
 }
 
+function ideaCard(it, passed) {
+  return `<div class="card${passed ? ' passed' : ''}"><div class="cardtitle">${esc(it.title)}</div>`
+    + (it.date ? `<div class="cardwhen">${esc(longDate(it.date))}${it.time ? ', ' + pretty(it.time) : ''}</div>` : '')
+    + `<div class="cardmeta"><span>${esc(names(it.for || []))}</span>${it.cost ? `<span>${esc(it.cost)}</span>` : ''}${it.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">Link</a>` : ''}</div>`
+    + (it.note ? `<div class="cardmeta">${esc(it.note)}</div>` : '')
+    + (schedulingId === it.id
+      ? `<div class="stagerow"><input type="date" id="sd" value="${esc(it.date || todayStr())}" data-autofocus aria-label="Date"><input type="time" id="st" value="${esc(it.time || '')}" aria-label="Time"></div>`
+        + `<div class="row"><button class="btn go" data-act="confirm-sched" data-id="${it.id}">Add to the week</button><button class="btn" data-act="sched-cancel">Cancel</button></div>`
+      : `<div class="row"><button class="btn go" data-act="sched" data-id="${it.id}">Schedule it</button><button class="btn del" data-act="drop-idea" data-id="${it.id}">Remove</button></div>`)
+    + '</div>';
+}
+
 function shelfHtml() {
   if (!state.ideas.length) return '<p class="note" style="margin-top:16px">The shelf is empty. Park things here as you hear about them: a show, a camp, a restaurant someone recommended. Nothing needs a date yet.</p>';
-  return '<p class="note" style="margin-top:12px">Things you might do. A date here means "maybe that day". It stays off the calendar until you schedule it.</p>'
-    + sortedIdeas().map((it) => `<div class="card"><div class="cardtitle">${esc(it.title)}</div>`
-      + (it.date ? `<div class="cardwhen">${esc(longDate(it.date))}${it.time ? ', ' + pretty(it.time) : ''}</div>` : '')
-      + `<div class="cardmeta"><span>${esc(names(it.for || []))}</span>${it.cost ? `<span>${esc(it.cost)}</span>` : ''}${it.link ? `<a href="${esc(it.link)}" target="_blank" rel="noopener">Link</a>` : ''}</div>`
-      + (it.note ? `<div class="cardmeta">${esc(it.note)}</div>` : '')
-      + (schedulingId === it.id
-        ? `<div class="stagerow"><input type="date" id="sd" value="${esc(it.date || todayStr())}" data-autofocus aria-label="Date"><input type="time" id="st" value="${esc(it.time || '')}" aria-label="Time"></div>`
-          + `<div class="row"><button class="btn go" data-act="confirm-sched" data-id="${it.id}">Add to the week</button><button class="btn" data-act="sched-cancel">Cancel</button></div>`
-        : `<div class="row"><button class="btn go" data-act="sched" data-id="${it.id}">Schedule it</button><button class="btn del" data-act="drop-idea" data-id="${it.id}">Remove</button></div>`)
-      + '</div>').join('');
+  const today = todayStr();
+  const ideas = sortedIdeas();
+  const current = ideas.filter((it) => !it.date || it.date >= today);
+  const passed = ideas.filter((it) => it.date && it.date < today);
+  let h = '<p class="note" style="margin-top:12px">Things you might do. A date here means "maybe that day". It stays off the calendar until you schedule it.</p>';
+  if (!current.length) h += '<p class="note">Nothing coming up.</p>';
+  h += current.map((it) => ideaCard(it, false)).join('');
+  if (passed.length) {
+    h += '<div class="subhead">Already passed</div>'
+      + '<p class="note">These dates have gone by. Schedule one if you still want to go, or remove it.</p>'
+      + passed.map((it) => ideaCard(it, true)).join('');
+  }
+  return h;
 }
 
 /* ---------- inbox ---------- */
@@ -422,13 +445,15 @@ function inboxHtml() {
     const forIds = e.for || p.for || [];
     const isPicked = !!picked[p.id];
     const isTask = p.kind === 'task';
+    const dateVal = e.date ?? p.date;
     h += `<div class="card${isPicked ? ' picked' : ''}">`
       + `<button class="pick" data-act="pick" data-id="${p.id}" aria-pressed="${isPicked}">${isPicked ? 'Selected' : 'Select'}</button>`
       + (isTask ? '<div class="kindtag">To do</div>' : '')
       + `<input type="text" data-pe="title" data-id="${p.id}" value="${esc(e.title ?? p.title)}" aria-label="Title">`
       + (isTask
-        ? `<div class="stagerow"><div><label class="label">Due</label><input type="date" data-pe="date" data-id="${p.id}" value="${esc(e.date ?? p.date)}" aria-label="Due date"></div></div>`
-        : `<div class="stagerow"><input type="date" data-pe="date" data-id="${p.id}" value="${esc(e.date ?? p.date)}" aria-label="Date"><input type="time" data-pe="time" data-id="${p.id}" value="${esc(e.time ?? p.time)}" aria-label="Time"></div>`)
+        ? `<div class="stagerow"><div><label class="label" for="pd-date-${p.id}"><span data-when="${p.id}" data-due="1">${esc(whenLabel(dateVal, true))}</span></label><input type="date" id="pd-date-${p.id}" data-pe="date" data-id="${p.id}" value="${esc(dateVal)}" aria-label="Due date"></div></div>`
+        : `<div class="stagerow"><div><label class="label" for="pd-date-${p.id}"><span data-when="${p.id}">${esc(whenLabel(dateVal, false))}</span></label><input type="date" id="pd-date-${p.id}" data-pe="date" data-id="${p.id}" value="${esc(dateVal)}" aria-label="Date"></div>`
+          + `<div><label class="label" for="pd-time-${p.id}">Time</label><input type="time" id="pd-time-${p.id}" data-pe="time" data-id="${p.id}" value="${esc(e.time ?? p.time)}" aria-label="Time"></div></div>`)
       + (p.where ? `<div class="cardmeta">${esc(p.where)}</div>` : '')
       + (p.note ? `<div class="cardmeta">${esc(p.note)}</div>` : '')
       + `<div class="cardmeta">${sourceLine(p)}</div>`
@@ -1163,7 +1188,14 @@ root.addEventListener('click', async (ev) => {
   }
 });
 
-root.addEventListener('input', (ev) => { if (ev.target.id === 'askin') askText = ev.target.value; });
+root.addEventListener('input', (ev) => {
+  if (ev.target.id === 'askin') askText = ev.target.value;
+  const el = ev.target;
+  if (el.dataset && el.dataset.pe === 'date') {
+    const lab = root.querySelector(`[data-when="${el.dataset.id}"]`);
+    if (lab) lab.textContent = whenLabel(el.value, lab.dataset.due === '1');
+  }
+});
 root.addEventListener('keydown', (ev) => {
   if (ev.target.id === 'askin' && ev.key === 'Enter' && !ev.shiftKey && window.matchMedia('(pointer: fine)').matches) { ev.preventDefault(); runAsk(); }
 });

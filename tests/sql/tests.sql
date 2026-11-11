@@ -239,6 +239,25 @@ insert into public.events (title, date, source) values ('Typed by hand', public.
 delete from public.events where title = 'Typed by hand';
 select pg_temp.check((select count(*) from public.dismissed where title = 'Typed by hand') = 0, 'deleting your own event is not a dismissal');
 
+-- 5g. Approving or shelving a copy does not create a second row
+insert into public.events (id, title, date, source) values ('ns1', 'No School', public.hm_today() + 20, 'manual');
+insert into public.pending (id, title, date, source) values ('pns', 'No School', public.hm_today() + 20, 'feed');
+insert into public.ideas (id, title, date, time) values ('lum', 'Longfellow Lumina', public.hm_today() + 21, '10:00');
+insert into public.pending (id, title, date, time, source) values ('plum', 'Longfellow Lumina openings', public.hm_today() + 21, '10:00', 'text');
+select pg_temp.as_user('alex@x.com');
+select public.approve_pending(jsonb_build_object('id', 'pns'));
+select pg_temp.check((select count(*) from public.events where date = public.hm_today() + 20 and title = 'No School') = 1, 'approving a copy does not add a second No School');
+select public.shelve_pending(jsonb_build_object('id', 'plum'));
+select pg_temp.check((select count(*) from public.ideas where date = public.hm_today() + 21) = 1, 'shelving a longer form of the same title does not add a second shelf card');
+select pg_temp.check((select count(*) from public.pending where id in ('pns', 'plum')) = 0, 'the copies left the inbox');
+reset role;
+select pg_temp.check(
+  public.stage_pending(jsonb_build_array(
+    jsonb_build_object('title', 'No School: Veterans Day', 'date', (public.hm_today() + 20)::text),
+    jsonb_build_object('title', 'Longfellow Lumina', 'date', (public.hm_today() + 21)::text, 'time', '10:00')
+  )) = '{"added": 0, "past": 0, "dupe": 2}'::jsonb,
+  'staging skips a longer form of an event or shelf item already kept');
+
 -- 6. Removing someone from allowed_users locks them out immediately
 delete from public.allowed_users where email = 'jordan@x.com';
 select pg_temp.as_user('jordan@x.com');

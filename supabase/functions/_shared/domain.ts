@@ -31,6 +31,17 @@ export const hhmm = (t: unknown): string => {
   const m = String(t ?? '').match(/^(\d{1,2}):(\d{2})/);
   return m ? m[1].padStart(2, '0') + ':' + m[2] : '';
 };
+
+/** Same title for "is this the event we already have?": case, spacing and punctuation ignored.
+ *  A longer title that starts with a shorter one of at least 8 characters is the same event
+ *  too ("No School" and "No School: Veterans Day", "Longfellow Lumina" and "Longfellow Lumina openings"). */
+export function sameEventTitle(a: string, b: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const x = norm(a), y = norm(b);
+  if (x === y) return true;
+  const [shorter, longer] = x.length <= y.length ? [x, y] : [y, x];
+  return shorter.length >= 8 && longer.startsWith(shorter + ' ');
+}
 const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
 const str = (v: unknown): string => (v == null ? '' : String(v));
 

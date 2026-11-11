@@ -6,7 +6,7 @@
 
 import {
   awayClashes, awayLine, conflictLine, conflicts, custodyRanges, describe, diff, dueLabel, hasKid, isFillOnly,
-  namesOf, needsOurDriver, prettyDate, cleanFields, todayIn, weekdayOf, addDays, timeRange, validDate, Invalid,
+  namesOf, needsOurDriver, prettyDate, cleanFields, todayIn, weekdayOf, addDays, timeRange, validDate, sameEventTitle, Invalid,
   type Ev, type Fields, type World,
 } from './domain.ts';
 import type { EventRow, Store, TaskPatch } from './store.ts';
@@ -259,7 +259,11 @@ export class Agent {
   async addIdea(input: Record<string, unknown>) {
     const w = await this.d.store.world();
     const f = cleanFields({ ...input, date: input.date || undefined }, w.members, this.today(), true);
-    if (!String(input.title ?? '').trim()) throw new Invalid('title is required');
+    const title = String(input.title ?? '').trim();
+    if (!title) throw new Invalid('title is required');
+    const date = f.date ?? '';
+    const dup = w.ideas.find((i) => (i.date || '') === date && sameEventTitle(i.title, title));
+    if (dup) throw new Invalid(`"${dup.title}" is already on the shelf. Nothing added.`);
     this.countWrite();
     const idea = await this.d.store.insertIdea({
       title: String(input.title).trim().slice(0, 200), date: f.date ?? '', time: '', for_ids: f.for_ids ?? [],

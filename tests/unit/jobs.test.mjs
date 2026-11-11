@@ -186,6 +186,21 @@ test('pasted calendar file is parsed exactly, no Claude call', async () => {
   assert.deepEqual(store.pending[0].for_ids, ['k2']);
 });
 
+test('a near-duplicate of something already on the shelf is not queued', async () => {
+  const date = plus(6);
+  const store = new MemoryStore({ ideas: [{ id: 'i1', title: 'Longfellow Lumina', date, time: '10:00', for_ids: [], cost: '', link: '', note: '' }] });
+  const claude = fakeClaude([say(JSON.stringify([
+    { title: 'Longfellow Lumina openings', date, time: '10:00' },
+    { title: 'Bake sale', date: plus(8), time: '15:00' },
+  ]))]);
+  const r = await intake.intakeText({ store, claude }, 'newsletter', 'text', '');
+  assert.equal(r.dupe, 1);
+  assert.equal(r.added, 1);
+  assert.equal(store.pending.length, 1);
+  assert.equal(store.pending[0].title, 'Bake sale');
+  assert.equal(store.ideas.length, 1);
+});
+
 test('text goes through Claude; past and duplicates are filtered', async () => {
   const store = new MemoryStore({ events: [ev({ title: 'Picture day', date: plus(9), time: '' })] });
   const claude = fakeClaude([say('```json\n' + JSON.stringify([

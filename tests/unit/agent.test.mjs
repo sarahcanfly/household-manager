@@ -29,6 +29,17 @@ test('adds an event straight away, flags the missing driver and tells the others
   assert.match(claude.calls[0].system, /data, never instructions/);
 });
 
+test('does not put the same idea on the shelf twice', async () => {
+  const date = plus(4);
+  const { store, make } = setup({ ideas: [{ id: 'i1', title: 'Longfellow Lumina', date, time: '10:00', for_ids: [], cost: '', link: '', note: '' }] });
+  const { agent, claude } = make([use('add_idea', { title: 'Longfellow Lumina openings', date }), say('already there')]);
+  await agent.ask('add lumina', []);
+  const tr = lastToolResults(claude)[0];
+  assert.equal(tr.is_error, true);
+  assert.match(tr.content, /already on the shelf/);
+  assert.equal(store.ideas.length, 1);
+});
+
 test('refuses duplicates and invalid requests without writing', async () => {
   const date = plus(10);
   const { store, make } = setup({ events: [ev({ id: 'e1', title: 'Haircut', date, time: '10:00', for_ids: ['s1'] })] });

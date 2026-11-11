@@ -96,6 +96,25 @@ test('sync: first run adds, second does nothing, changes and removals carry over
   assert.ok(!store.events.some((e) => e.title === 'Mia: orthodontist'));
 });
 
+test('sync does not add a second copy of an event already on the calendar', async () => {
+  const today = plus(0);
+  const day = plus(10);
+  const text = ['BEGIN:VCALENDAR',
+    'BEGIN:VEVENT', 'UID:A', 'SUMMARY:No School', `DTSTART;VALUE=DATE:${d(day)}`, 'END:VEVENT',
+    'BEGIN:VEVENT', 'UID:B', 'SUMMARY:No School: Veterans Day', `DTSTART;VALUE=DATE:${d(day)}`, 'END:VEVENT',
+    'END:VCALENDAR'].join('\r\n');
+  const school = { name: 'School', url: 'https://school/x.ics', mode: 'sync', default_for: ['Mia', 'Leo'] };
+  const store = new MemoryStore();
+  const items = ics.applyRules(ics.parseIcs(text, TZ, today, 120), school, store.m);
+  const first = await fs.syncFeed(store, school, items, store.m, today);
+  assert.equal(first.added, 1, 'two feed entries for the same day become one event');
+  assert.equal(store.events.filter((e) => /no school/i.test(e.title)).length, 1);
+  const again = await fs.syncFeed(store, { ...school, name: 'District' }, items, store.m, today);
+  assert.equal(again.added, 0, 'another calendar does not add the same day again');
+  assert.equal(store.events.filter((e) => /no school/i.test(e.title)).length, 1);
+  assert.equal(again.removed, 0, 'the copy already there is left alone');
+});
+
 test('sync: an empty calendar never wipes events, and old events are left alone', async () => {
   const today = plus(0);
   const store = new MemoryStore();
