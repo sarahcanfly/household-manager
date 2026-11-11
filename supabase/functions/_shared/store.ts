@@ -25,6 +25,8 @@ export interface Settings {
   push: { weekly: boolean; reminders: boolean; digest: boolean };
   feeds: Feed[];
   docs: DocSource[];
+  /** Fingerprint of each shared document the last time Claude read it (document id -> hash), so unchanged documents are skipped. */
+  doc_hashes?: Record<string, string>;
   ics_rules: FeedRules;
   max_recurrence_weeks: number;
 }
