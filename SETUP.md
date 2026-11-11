@@ -90,6 +90,57 @@ Within a few minutes your events appear on the Household calendar. A ⚠ in fron
 event has nobody assigned to drive. Edit events in the app, not in Google Calendar: the app is the source of
 truth and overwrites changes made there.
 
+## Your own Google Calendar
+
+This is separate from the shared Household calendar above. It puts the same events on a calendar in your
+own Google account (Sarah's, for example), and keeps them up to date when someone adds one to the week,
+edits it, or removes it. The title includes who it is for and who is taking them (Sarah, Mikey, Jenn, Eli,
+and so on). The place is the location. The app remembers the Google event, so a later edit changes that
+same event instead of adding a second one. If that Google calendar is also one of the feeds the app reads,
+those copies are recognized and are not imported again.
+
+You need a Google Cloud "OAuth client" (a sign-in button), three secrets, and the new database table.
+Nothing goes in Netlify. The sign-in is handled by a Supabase function.
+
+1. Open **console.cloud.google.com**. You can use the same project as step 6. If the Calendar API is not
+   already on, **APIs & Services → Library → Google Calendar API → Enable**.
+2. **APIs & Services → OAuth consent screen** (Google may call this **Google Auth platform**).
+   - User type: **External**. App name: `Household`. Support email: your own email.
+   - Add the scopes the app asks for, if it makes you list them: openid, email, Google Calendar events,
+     and seeing your list of calendars (`calendar.events` and `calendar.calendarlist.readonly`).
+   - **Publish** the app (set it to **In production**). Leave it in Testing and Google forgets the sign-in
+     after 7 days, and you would have to connect again every week. Publishing shows an "unverified app"
+     warning the first time. That is expected for a private household app. You do not need to submit it
+     for Google's review. On the warning, click **Advanced**, then **Go to Household**.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**. Application type: **Web application**.
+   Name it `Household`.
+   - **Authorized redirect URIs** — add exactly this, with your own project reference if it is different
+     (the reference is the part of your Supabase URL before `.supabase.co`; this household's is
+     `rolkzfoxypghantxcuev`):
+     `https://rolkzfoxypghantxcuev.supabase.co/functions/v1/google-calendar`
+   - **Authorized JavaScript origins** — add `https://mikeysarah.netlify.app`
+   - Create it, then copy the **Client ID** and the **Client secret**.
+4. In Supabase → **Edge Functions → Secrets**, add:
+   - `GOOGLE_OAUTH_CLIENT_ID` — the Client ID
+   - `GOOGLE_OAUTH_CLIENT_SECRET` — the Client secret
+   - `GOOGLE_TOKEN_KEY` — a long random password you make up (the SQL editor can make one:
+     `select encode(extensions.gen_random_bytes(32), 'hex');`). This locks the saved Google sign-in so a
+     copy of the database alone cannot use it. Set it before the first sign-in. If you change it later,
+     sign in from the app again.
+5. Confirm `APP_URL` is already set to `https://mikeysarah.netlify.app` with no slash at the end. After
+   Google sign-in, the app sends you back there.
+6. The new tables (`google_accounts` and `personal_cal_map`) are in
+   `supabase/migrations/20261111120000_personal_google.sql`. Merging this change runs the usual deploy,
+   which applies that migration and publishes the `google-calendar` function. If the GitHub Action did
+   not run, open **SQL Editor**, paste that file, and run it. New secrets do not need a redeploy; the
+   function itself does, which the Action does.
+7. In the app: **Household → Sign in with Google**. Pick the calendar (your main one, or another you can
+   edit). Events already on the week are copied there, and from then on **Add to the week**, edits, and
+   deletes keep it in step. **Sync now** pushes immediately. **Disconnect** removes the copies this app
+   created.
+
+Edit events in the app, not on that Google calendar. The app overwrites changes made there.
+
 ## 7. Email and texts
 
 1. Sign up at **brevo.com** (free). Under **Senders, domains & dedicated IPs → Senders**, add the address emails
@@ -196,6 +247,8 @@ their own phone. **Make a new key** or **Turn off** in the app stops the old one
 - A shared calendar you trust (for example a co-parenting calendar) can sync straight onto the
   calendar instead of going to the Inbox: give its feed `"mode": "sync"`. See the notes at the top of
   `supabase/functions/_shared/feedsync.ts` for the options (who it is for, custody days).
+- **Your own Google Calendar:** Household → Sign in with Google, then pick the calendar. See "Your own
+  Google Calendar" above. Events this app wrote are not imported again if that calendar is also a feed.
 
 ## If something isn't working
 

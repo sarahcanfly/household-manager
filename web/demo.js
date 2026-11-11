@@ -43,6 +43,12 @@ export function createDemoBackend() {
     ],
   };
   const settings = { morning: { enabled: true, hour: 7, email: false }, notify: ['alex@example.com'], weekly: { enabled: true, day: 'MONDAY', hour: 7 }, reminders: { enabled: true, hour: 18 }, digest: { enabled: true, hour: 19 }, timezone: 'America/New_York' };
+  const gcalDemo = { configured: true, connected: false, googleEmail: '', calendarId: '', calendarName: '', lastError: '' };
+  const demoCals = [
+    { id: 'alex', name: 'Alex', primary: true },
+    { id: 'family', name: 'Family', primary: false },
+    { id: 'birthdays', name: 'Birthdays', primary: false },
+  ];
   const wait = (v) => new Promise((r) => setTimeout(() => r(v), 120));
   const clone = (x) => JSON.parse(JSON.stringify(x));
   const byId = (arr, id) => arr.findIndex((x) => x.id === id);
@@ -112,6 +118,20 @@ export function createDemoBackend() {
     agentUrl: 'https://your-project.supabase.co/functions/v1/agent',
     extractText: () => { db.pending.push({ id: uid(), title: 'Field trip forms due', date: day(4), time: '', for: ['k1'], where: '', note: 'Demo result', source: 'text', sourceRef: '', confidence: 'low' }); return wait({ found: 1, added: 1, past: 0, dupe: 0, parsed: false }); },
     extractFile: () => wait({ found: 0, added: 0, past: 0, dupe: 0, parsed: false }),
+    googleStatus: () => wait({ ...gcalDemo }),
+    googleStart: () => wait({ demo: true }),
+    googleCalendars: () => wait({ calendars: demoCals.map((c) => ({ ...c })) }),
+    googleChoose(calendarId) {
+      const c = demoCals.find((x) => x.id === calendarId);
+      if (!c) return Promise.reject(new Error('That calendar is not in the demo.'));
+      Object.assign(gcalDemo, { connected: true, googleEmail: 'alex@example.com', calendarId: c.id, calendarName: c.name, lastError: '' });
+      return wait({ ok: true, calendarName: c.name, sync: { created: 0, updated: 0, deleted: 0 } });
+    },
+    googleDisconnect() {
+      Object.assign(gcalDemo, { connected: false, googleEmail: '', calendarId: '', calendarName: '', lastError: '' });
+      return wait({ ok: true, note: 'Disconnected.' });
+    },
+    googleSync: () => wait({ created: 0, updated: 0, deleted: 0 }),
     checkFeeds: () => wait({ report: ['Demo mode: no feeds to check.'] }),
     sendTest: () => wait({ sent: [] }),
     testSms: () => wait({ ok: true, results: [{ name: 'Alex', ok: true }], enabled: true }),

@@ -20,7 +20,8 @@ reminders by email and text.
    intake ........ pasted text, photos, PDFs, calendar files → Inbox
    inbound-email . forwarded emails → Inbox
    poll .......... hourly: school calendar feed and shared Google Docs → Inbox
-   calendar-sync . events → shared Google Calendar
+   calendar-sync . events → shared Google Calendar, and any personal calendar someone connected
+   google-calendar  sign in with Google, pick a calendar, keep it in step
    notify ........ weekly summary, evening reminder, "things are waiting"
 ```
 

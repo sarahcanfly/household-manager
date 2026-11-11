@@ -233,6 +233,9 @@ textarea { min-height: 110px; resize: vertical; }
 .mrow { display: grid; grid-template-columns: 12px 1fr 132px 32px; gap: 8px; align-items: center; margin: 6px 0; }
 .mrow button { border: 0; background: none; font-size: 1.3rem; color: var(--muted); }
 .hours { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.calpick { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+.calpick button { text-align: left; }
+.calpick button[aria-pressed="true"] { border-color: var(--accent); background: var(--soft); }
 
 /* ---------- floating button, sheet, toasts ---------- */
 .fab {

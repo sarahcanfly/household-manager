@@ -29,6 +29,8 @@ let askText = '', askLog = [], askBusy = false, waiting = [], listening = false,
 let siri = null;   // { has: bool, key?: string } while the Household sheet is open
 let rems = null;   // repeating reminders, while the Household sheet is open
 let pushState = '';   // '', 'unsupported', 'install', 'blocked', 'off', 'on' (this phone)
+let gcal = null, gcalCals = null, gcalPick = '';   // this person's Google Calendar, while signed in
+let gcalReturn = '', gcalReason = '';
 let gate = null, gateErr = '', offline = !navigator.onLine;
 let theme = readTheme();
 
@@ -693,11 +695,110 @@ function formHtml(isEdit) {
     + '<button class="ghost" data-act="close">Cancel</button>';
 }
 
+function gcalReturnMessage(code) {
+  return {
+    denied: 'Google sign-in was cancelled.',
+    expired: 'That Google sign-in link expired. Try Sign in with Google again.',
+    exchange: 'Google did not finish signing in. Try again.',
+    notallowed: 'That sign-in was not for someone in this household.',
+    norefresh: 'Google did not keep you signed in. Try again and accept the permissions it asks for.',
+    noconfig: 'Google sign-in is not set up on the server yet.',
+  }[code] || 'Google sign-in did not finish. Try again.';
+}
+
+function gcalPreview() {
+  const list = (state && state.events) || [];
+  const e = list.find((x) => x.driver && x.driver !== 'none' && (x.for || []).some((id) => member(id) && member(id).kind === 'kid'))
+    || list.find((x) => (x.for || []).length);
+  if (!e) return '';
+  const who = (e.for || []).map((id) => member(id) && member(id).name).filter(Boolean);
+  const taker = e.driver && e.driver !== 'none' ? (member(e.driver) && member(e.driver).name) : '';
+  let title = e.title;
+  if (who.length && !who.some((n) => title.toLowerCase().includes(n.toLowerCase()))) title += ` (${who.join(' & ')})`;
+  if (taker && !title.toLowerCase().includes(taker.toLowerCase())) title += ` · ${taker}`;
+  return `For example, “${title}”${e.where ? ` at ${e.where}` : ''}.`;
+}
+
+function ensureGcalPick() {
+  if (!gcalCals || !gcalCals.length) return;
+  if (gcalPick && gcalCals.some((c) => c.id === gcalPick)) return;
+  const current = gcalCals.find((c) => c.id === (gcal && gcal.calendarId));
+  gcalPick = (current || gcalCals.find((c) => c.primary) || gcalCals[0]).id;
+}
+
+function syncNote(sync, name) {
+  if (!sync || sync.skipped) return `Saved ${name}. Events will show up on it shortly.`;
+  if (sync.error) return sync.error;
+  const r = sync.result || sync;
+  if (r.stopped) return `Google refused the changes. ${r.stopped}`;
+  const bits = [];
+  if (r.created) bits.push(`added ${r.created}`);
+  if (r.updated) bits.push(`updated ${r.updated}`);
+  if (r.recreated) bits.push(`rebuilt ${r.recreated}`);
+  if (r.deleted) bits.push(`removed ${r.deleted}`);
+  if (r.deferred) bits.push(`${r.deferred} still to send`);
+  if (r.errors) bits.push(`${r.errors} failed`);
+  return `${name}: ${bits.length ? bits.join(', ') : 'already up to date'}.`;
+}
+
+function gcalHtml() {
+  const demo = api && api.mode === 'demo';
+  let h = '<div class="subhead">Your Google Calendar</div>';
+  h += '<p class="note">Events on the week are also put on a Google Calendar you choose. Adding one, editing it, or removing it updates that calendar, so the same event is not added twice. The title includes who it is for and who is taking them, and the place is the location.</p>';
+  const preview = gcalPreview();
+  if (preview) h += `<p class="note">${esc(preview)}</p>`;
+  if (demo) h += '<p class="note">Demo preview. Nothing is sent to Google.</p>';
+  if (!gcal) return h + '<p class="note">Checking…</p>';
+  if (gcal.lastError) h += `<p class="err">${esc(gcal.lastError)}</p>`;
+  if (!gcal.configured && !demo) return h + '<p class="note">Google sign-in is not set up on the server yet. The steps are in SETUP.md, under “Your own Google Calendar”.</p>';
+  const dis = busy ? ' disabled' : '';
+  if (gcalCals) {
+    if (!gcalCals.length) {
+      return h + '<p class="note">Google did not list a calendar you can edit.</p>'
+        + `<button class="btn" data-act="gcal-start"${dis}>Sign in with Google again</button>`;
+    }
+    ensureGcalPick();
+    h += '<p class="note">Which calendar should these go on?</p><div class="calpick">';
+    for (const c of gcalCals) {
+      h += `<button type="button" class="btn" data-act="gcal-pick" data-id="${esc(c.id)}" aria-pressed="${gcalPick === c.id}">${esc(c.name)}${c.primary ? ' (main calendar)' : ''}</button>`;
+    }
+    h += '</div>';
+    h += `<button class="primary" data-act="gcal-choose"${dis}>${busy ? 'Saving…' : 'Use this calendar'}</button>`;
+    if (gcal.connected && gcal.calendarId) h += `<button class="ghost" data-act="gcal-cancel">Keep ${esc(gcal.calendarName || 'the current one')}</button>`;
+    return h;
+  }
+  if (!gcal.connected) return h + `<button class="btn go" data-act="gcal-start"${dis}>Sign in with Google</button>`;
+  const where = gcal.calendarName || 'the calendar you chose';
+  h += `<p class="note">On. New and changed events go to <strong>${esc(where)}</strong>${gcal.googleEmail ? ` (${esc(gcal.googleEmail)})` : ''}.</p>`;
+  h += `<div class="row"><button class="btn" data-act="gcal-sync"${dis}>Sync now</button>`
+    + `<button class="btn" data-act="gcal-change"${dis}>Use a different calendar</button>`
+    + `<button class="btn del" data-act="gcal-disconnect"${dis}>Disconnect</button></div>`;
+  return h;
+}
+
+async function loadGcal() {
+  if (!api || !api.googleStatus) { gcal = null; return; }
+  try { gcal = await api.googleStatus(); }
+  catch (err) { gcal = { configured: false, connected: false, googleEmail: '', calendarId: '', calendarName: '', lastError: err.message || '' }; }
+}
+
+function consumeGcalQuery() {
+  const q = new URLSearchParams(location.search);
+  const g = q.get('gcal');
+  if (!g) return;
+  gcalReason = q.get('reason') || '';
+  q.delete('gcal');
+  q.delete('reason');
+  const next = location.pathname + (q.toString() ? `?${q}` : '') + location.hash;
+  history.replaceState(null, '', next);
+  gcalReturn = g;
+}
+
 function householdHtml() {
   const s = settingsDraft;
   const hourOpts = (cur) => Array.from({ length: 24 }, (_, h) => `<option value="${h}"${+cur === h ? ' selected' : ''}>${pretty(`${String(h).padStart(2, '0')}:00`)}</option>`).join('');
   const dayOpts = (cur) => DAYS.map((d) => `<option value="${d.toUpperCase()}"${String(cur).toUpperCase() === d.toUpperCase() ? ' selected' : ''}>${d}</option>`).join('');
-  let h = '<h2>Household</h2><p class="note">Rename anyone, or add someone. <strong>Other adult</strong> is for people who turn up on the calendar without living here, like a co-parent, a grandparent or a sitter. Removing a person leaves their events alone.</p>';
+  let h = '<h2>Household</h2>' + gcalHtml() + '<p class="note">Rename anyone, or add someone. <strong>Other adult</strong> is for people who turn up on the calendar without living here, like a co-parent, a grandparent or a sitter. Removing a person leaves their events alone.</p>';
   memberDraft.forEach((m, i) => {
     h += `<div class="mrow"><span class="dot" style="background:${PALETTE[i % 8]}"></span>`
       + `<input type="text" data-mn="${i}" value="${esc(m.name)}" aria-label="Name">`
@@ -797,6 +898,7 @@ function sheetHtml() {
       (e.withUs || []).length ? `${names(e.withUs)} with us` : '',
       awayKids(e) ? `${names(awayKids(e).kids)} at ${awayKids(e).where} that day` : '',
       e.where, e.note,
+      gcal && gcal.connected && gcal.calendarName ? `On ${gcal.calendarName} in Google Calendar too: who it is for, who is taking them, and the place.` : '',
       /^sync:/.test(e.source || '') ? `From the ${e.source.slice(5)} calendar. Change it there; edits here are replaced on the next sync.` : '',
     ].filter(Boolean);
     inner = `<h2>${esc(e.title)}</h2><p class="note">${lines.map(esc).join('<br>')}</p>`
@@ -868,10 +970,16 @@ async function turnOffPush() {
 async function openHousehold() {
   memberDraft = roster().map((m) => ({ id: m.id, name: m.name, kind: m.kind }));
   settingsDraft = null;
+  gcalCals = null;
   sheet = { mode: 'household' };
   render();
   try {
     settings = await api.settings();
+    await loadGcal();
+    if (gcal && gcal.connected && !gcal.calendarId) {
+      try { gcalCals = (await api.googleCalendars()).calendars; }
+      catch (err) { gcal = { ...gcal, lastError: err.message }; }
+    }
     settingsDraft = {
       notify: (settings.notify || []).join('\n'),
       'weekly-day': settings.weekly?.day || 'MONDAY', 'weekly-hour': settings.weekly?.hour ?? 7,
@@ -1047,7 +1155,70 @@ root.addEventListener('click', async (ev) => {
       busy = true; render();
       try { await api.deleteReminder(id); rems = rems.filter((r) => r.id !== id); info = 'Reminder removed.'; } catch (err) { errMsg = err.message; }
       busy = false; render(); break;
-    case 'close': case 'scrim': rems = null; fromEmail = null; sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; render(); break;
+    case 'close': case 'scrim': rems = null; fromEmail = null; sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; gcalCals = null; render(); break;
+    case 'gcal-pick': gcalPick = id; render(); break;
+    case 'gcal-cancel': gcalCals = null; render(); break;
+    case 'gcal-start': {
+      if (api.mode === 'demo') {
+        gcal = { configured: true, connected: true, googleEmail: 'alex@example.com', calendarId: gcal && gcal.calendarId || '', calendarName: gcal && gcal.calendarName || '', lastError: '' };
+        try { gcalCals = (await api.googleCalendars()).calendars; gcalPick = ''; }
+        catch (err) { errMsg = err.message; }
+        render();
+        break;
+      }
+      busy = true; render();
+      try {
+        const r = await api.googleStart();
+        if (r && r.url) { location.href = r.url; return; }
+        errMsg = 'Google sign-in did not start.';
+      } catch (err) { errMsg = err.message; }
+      busy = false; render();
+      break;
+    }
+    case 'gcal-choose': {
+      if (!gcalPick) return;
+      const pickedCal = (gcalCals || []).find((c) => c.id === gcalPick);
+      busy = true; render();
+      try {
+        const r = await api.googleChoose(gcalPick);
+        gcal = { ...(gcal || {}), configured: true, connected: true, calendarId: gcalPick, calendarName: (r && r.calendarName) || (pickedCal && pickedCal.name) || '', lastError: (r && r.sync && r.sync.error) || '' };
+        gcalCals = null;
+        info = api.mode === 'demo'
+          ? `Demo: events would go to ${gcal.calendarName}. Nothing was sent to Google.`
+          : syncNote(r && r.sync, gcal.calendarName || 'Google Calendar');
+      } catch (err) { errMsg = err.message; }
+      busy = false; render();
+      break;
+    }
+    case 'gcal-change': {
+      busy = true; render();
+      try { gcalCals = (await api.googleCalendars()).calendars; gcalPick = ''; }
+      catch (err) { errMsg = err.message; }
+      busy = false; render();
+      break;
+    }
+    case 'gcal-sync': {
+      busy = true; render();
+      try {
+        const r = await api.googleSync();
+        if (r && r.lastError) gcal = { ...gcal, lastError: r.lastError };
+        info = api.mode === 'demo' ? 'Demo: nothing was sent to Google.' : syncNote(r, (gcal && gcal.calendarName) || 'Google Calendar');
+      } catch (err) { errMsg = err.message; }
+      busy = false; render();
+      break;
+    }
+    case 'gcal-disconnect': {
+      if (!confirm('Stop copying events to Google Calendar? Events already put there are removed.')) return;
+      busy = true; render();
+      try {
+        const r = await api.googleDisconnect();
+        gcal = { configured: !gcal || gcal.configured !== false, connected: false, googleEmail: '', calendarId: '', calendarName: '', lastError: '' };
+        gcalCals = null;
+        info = api.mode === 'demo' ? 'Disconnected in this demo. Nothing on Google was changed.' : ((r && r.note) || 'Disconnected from Google Calendar.');
+      } catch (err) { errMsg = err.message; }
+      busy = false; render();
+      break;
+    }
     case 'push-on':
       busy = true; render();
       try { await turnOnPush(); if (pushState === 'on') info = 'Notifications are on. A test is on its way.'; } catch (err) { errMsg = err.message; }
@@ -1279,7 +1450,14 @@ async function enter() {
     if (!(await api.isAllowed())) { gate = 'denied'; render(); return; }
     gate = null;
     await load();
+    await loadGcal();
+    const ret = gcalReturn;
+    gcalReturn = '';
     await openIncoming();
+    if (ret === 'error') errMsg = gcalReturnMessage(gcalReason);
+    if (ret === 'connected') info = 'Google Calendar is connected.';
+    if (ret === 'choose') info = 'Choose which calendar should get the week.';
+    if (ret) await openHousehold();
     if (unsubscribe) unsubscribe();
     unsubscribe = api.onChange(() => { if (!busy && !sheet && !parsing) load(); });
   } catch (err) { gate = 'error'; gateErr = err.message; render(); }
@@ -1287,6 +1465,7 @@ async function enter() {
 
 async function boot() {
   applyTheme(theme);
+  consumeGcalQuery();
   readIncoming();
   const cfg = window.HM_CONFIG || {};
   const demo = new URLSearchParams(location.search).has('demo');
