@@ -231,6 +231,42 @@ test('scheduled poll reads feeds and docs and reports errors per source', async 
   assert.equal(store.logs.filter((l) => l.action === 'poll').length, 3);
 });
 
+test('scheduled poll skips documents that have not changed, and reads them again when they do', async () => {
+  const store = new MemoryStore({ settings: { docs: [{ id: 'doc1', name: 'Upcoming Events' }] } });
+  const claude = fakeClaude([
+    say(JSON.stringify([{ title: 'Ivy baseball', date: plus(6), time: '17:30', for: ['k3'] }])),
+    say(JSON.stringify([{ title: 'Ivy baseball', date: plus(6), time: '17:30', for: ['k3'] }, { title: 'Mia recital', date: plus(8), time: '18:00', for: ['k1'] }])),
+  ]);
+  let text = 'October\nTue 13 Ivy baseball 5:30';
+  const deps = { store, claude, fetchText: async () => '', driveText: async () => text, driveBase64: async () => '' };
+  const r1 = await intake.pollSources(deps, 'scheduled');
+  assert.match(r1[0], /found 1, queued 1/);
+  const r2 = await intake.pollSources(deps, 'scheduled');
+  assert.match(r2[0], /unchanged since last read, skipped/);
+  assert.equal(claude.calls.length, 1, 'no second Claude call for an unchanged document');
+  text += '\nThu 15 Mia recital 6pm';
+  const r3 = await intake.pollSources(deps, 'scheduled');
+  assert.match(r3[0], /found 2, queued 1/);
+  assert.equal(claude.calls.length, 2, 'a changed document is read again');
+});
+
+test('a document that failed to read is retried next time, and removed documents are forgotten', async () => {
+  const store = new MemoryStore({ settings: { docs: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] } });
+  const claude = fakeClaude([say('not json'), say('[]'), say('[]'), say('[]')]);
+  const deps = { store, claude, fetchText: async () => '', driveText: async (id) => `text of ${id}`, driveBase64: async () => '' };
+  const r1 = await intake.pollSources(deps, 'scheduled');
+  assert.match(r1[0], /A: error/);
+  assert.match(r1[1], /B: found 0/);
+  assert.deepEqual(Object.keys(store.s.doc_hashes), ['b'], 'only the successful read is remembered');
+  const r2 = await intake.pollSources(deps, 'scheduled');
+  assert.match(r2[0], /A: found 0/, 'failed document is read again');
+  assert.match(r2[1], /B: unchanged/);
+  store.s.docs = [{ id: 'a', name: 'A' }];
+  store.s.doc_hashes.zzz = 'old';
+  await intake.pollSources({ ...deps, driveText: async () => 'text changed' }, 'scheduled');
+  assert.ok(!('b' in store.s.doc_hashes) && !('zzz' in store.s.doc_hashes), 'removed documents are forgotten');
+});
+
 test('extraction parsing tolerates prose around the JSON and rejects garbage', () => {
   const m = members();
   assert.equal(extract.parseExtraction('Here you go: [{"title":"A","date":"2026-11-01","time":"9:00"}] thanks', m)[0].time, '', 'bad time format becomes all day');

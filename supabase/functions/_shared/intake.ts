@@ -67,6 +67,11 @@ export interface PollDeps extends IntakeDeps {
   driveBase64(id: string): Promise<string>;
 }
 
+async function fingerprint(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export async function pollSources(d: PollDeps, actor: string): Promise<string[]> {
   const s = await d.store.settings();
   const report: string[] = [];
@@ -85,14 +90,29 @@ export async function pollSources(d: PollDeps, actor: string): Promise<string[]>
       }
     } catch (e) { report.push(`${f.name}: error ${(e as Error).message}`); }
   }
-  for (const doc of (s.docs ?? []) as DocSource[]) {
+  // Reading a document costs a Claude call, so only do it when the document has changed since it was
+  // last read. The fingerprint is saved only after a successful read, so a failure is retried next hour.
+  const docs = (s.docs ?? []) as DocSource[];
+  const seen: Record<string, string> = { ...(s.doc_hashes ?? {}) };
+  let seenChanged = false;
+  for (const doc of docs) {
     try {
       const ref = `https://drive.google.com/open?id=${doc.id}`;
-      const r = doc.type === 'pdf'
-        ? await intakeFile(d, await d.driveBase64(doc.id), 'application/pdf', 'doc', ref, doc.hint)
-        : await intakeText(d, await d.driveText(doc.id), 'doc', ref, 'doc', doc.hint);
+      const pdf = doc.type === 'pdf';
+      const content = pdf ? await d.driveBase64(doc.id) : await d.driveText(doc.id);
+      const fp = await fingerprint(`${pdf ? 'pdf' : 'doc'}|${doc.hint ?? ''}|${content}`);
+      if (seen[doc.id] === fp) { report.push(`${doc.name}: unchanged since last read, skipped`); continue; }
+      const r = pdf
+        ? await intakeFile(d, content, 'application/pdf', 'doc', ref, doc.hint)
+        : await intakeText(d, content, 'doc', ref, 'doc', doc.hint);
+      seen[doc.id] = fp; seenChanged = true;
       report.push(`${doc.name}: found ${r.found}, queued ${r.added}, ${r.past} past, ${r.dupe} already known`);
     } catch (e) { report.push(`${doc.name}: error ${(e as Error).message}`); }
+  }
+  const ids = new Set(docs.map((x) => x.id));
+  for (const id of Object.keys(seen)) if (!ids.has(id)) { delete seen[id]; seenChanged = true; }   // forget removed documents
+  if (seenChanged) {
+    try { await d.store.setSetting('doc_hashes', seen); } catch { /* worst case the next run reads the document again */ }
   }
   for (const line of report) await d.store.log(actor, 'poll', line);
   return report;
