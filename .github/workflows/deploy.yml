@@ -53,7 +53,7 @@ jobs:
           fi
       - name: Update database
         if: steps.check.outputs.ready == 'true'
-        run: supabase db push --include-all
+        run: supabase db push --include-all --remote
       - name: Deploy server functions
         if: steps.check.outputs.ready == 'true'
         run: supabase functions deploy --project-ref "$PROJECT_REF"
@@ -98,6 +98,6 @@ jobs:
             exit 1
           fi
       - name: Update ${{ matrix.family }} database
-        run: supabase db push --include-all
+        run: supabase db push --include-all --remote
       - name: Deploy ${{ matrix.family }} server functions
         run: supabase functions deploy --project-ref "$PROJECT_REF"
