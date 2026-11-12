@@ -393,7 +393,10 @@ function printEntry(time, title, who) {
   return `<div class="pentry"><span class="ptime">${esc(time)}</span><span class="pbody"><span class="ptitle">${esc(title)}</span>${who ? ` <span class="pwho">${esc(who)}</span>` : ''}</span></div>`;
 }
 
-/** Calendar grid, then every event in two columns. Hidden on screen; the on-screen grid still clips to three. */
+let monthPrintModel = null;
+
+/** Calendar grid, then every event in two columns. Hidden on screen; the on-screen grid still clips to three.
+    The same model is what the shared PDF is drawn from, because iOS prints that file rather than this page. */
 function monthPrintHtml(p) {
   const house = adults().map((m) => m.name).join(' & ') || 'Household';
   const who = filterId ? names([filterId]) : '';
@@ -405,6 +408,30 @@ function monthPrintHtml(p) {
     const groups = cust ? cust.groups.filter((g) => !filterId || g.kids.includes(filterId)) : [];
     return { evs, groups, may: maybesByDay[key] || [] };
   };
+  const days = [];
+  const groups = [];
+  for (let dn = 1; dn <= p.daysIn; dn++) {
+    const key = `${p.prefix}-${String(dn).padStart(2, '0')}`;
+    const { evs, groups: away, may } = onDay(key);
+    days.push({
+      n: dn,
+      where: away.map((g) => g.where).filter(Boolean).join(', '),
+      colors: evs.slice(0, 6).map((e) => colorOf((e.for || [])[0])),
+    });
+    if (!evs.length && !away.length && !may.length) continue;
+    const d = parseYmd(key);
+    const dayName = key === p.today ? 'Today' : DAYS[d.getDay()].slice(0, 3);
+    const entries = [];
+    away.forEach((g) => entries.push({ time: 'All day', title: `At ${g.where}`, who: names(g.kids) }));
+    evs.forEach((e) => entries.push({ time: e.time ? span(e, true) : 'All day', title: e.title, who: (e.for || []).length ? names(e.for) : '' }));
+    may.forEach((it) => entries.push({ time: it.time ? `Maybe ${pretty(it.time, true)}` : 'Maybe', title: it.title, who: (it.for || []).length ? names(it.for) : '' }));
+    groups.push({ label: `${dayName} ${d.getDate()}`, entries });
+  }
+  monthPrintModel = {
+    house, label: `${p.label}${who ? ' — ' + who : ''}`, startDow: p.startDow, daysIn: p.daysIn,
+    today: String(p.today).slice(0, 7) === p.prefix ? +String(p.today).slice(-2) : 0,
+    days, groups,
+  };
 
   let h = `<div class="monthprint"><h2>${esc(house)}</h2><div class="printsub">${esc(p.label)}${who ? ' — ' + esc(who) : ''}</div>`;
   h += '<div class="cal">' + ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => `<div class="caldow">${d}</div>`).join('');
@@ -412,30 +439,19 @@ function monthPrintHtml(p) {
   for (let i = 0; i < total; i++) {
     const dn = i - p.startDow + 1;
     if (dn < 1 || dn > p.daysIn) { h += '<div class="calcell off"></div>'; continue; }
+    const day = days[dn - 1];
     const key = `${p.prefix}-${String(dn).padStart(2, '0')}`;
-    const { evs, groups } = onDay(key);
-    const cls = ['calcell', key === p.today ? 'today' : '', evs.length ? 'has' : '', groups.length ? 'away' : ''].filter(Boolean).join(' ');
-    const dots = evs.slice(0, 8).map((e) => `<span class="dot" style="${barStyle(e.for || [])}"></span>`).join('');
-    const where = groups.map((g) => g.where).filter(Boolean).join(', ');
-    h += `<div class="${cls}"><div class="calnum">${dn}</div>${where ? `<div class="calwhere">${esc(where)}</div>` : ''}${dots ? `<div class="caldots">${dots}${evs.length > 8 ? '<span class="calmore">+</span>' : ''}</div>` : ''}</div>`;
+    const cls = ['calcell', key === p.today ? 'today' : '', day.colors.length ? 'has' : '', day.where ? 'away' : ''].filter(Boolean).join(' ');
+    const dots = (p.byDay[key] || []).slice(0, 8).map((e) => `<span class="dot" style="${barStyle(e.for || [])}"></span>`).join('');
+    h += `<div class="${cls}"><div class="calnum">${dn}</div>${day.where ? `<div class="calwhere">${esc(day.where)}</div>` : ''}${dots ? `<div class="caldots">${dots}${(p.byDay[key] || []).length > 8 ? '<span class="calmore">+</span>' : ''}</div>` : ''}</div>`;
   }
   h += '</div><div class="listhead">Events</div><div class="twocol">';
-
-  let any = false;
-  for (let dn = 1; dn <= p.daysIn; dn++) {
-    const key = `${p.prefix}-${String(dn).padStart(2, '0')}`;
-    const { evs, groups, may } = onDay(key);
-    if (!evs.length && !groups.length && !may.length) continue;
-    any = true;
-    const d = parseYmd(key);
-    const dayName = key === p.today ? 'Today' : DAYS[d.getDay()].slice(0, 3);
-    h += `<section class="daygroup"><div class="daylabel">${dayName} ${d.getDate()}</div>`;
-    groups.forEach((g) => { h += printEntry('All day', `At ${g.where}`, names(g.kids)); });
-    evs.forEach((e) => { h += printEntry(e.time ? span(e, true) : 'All day', e.title, (e.for || []).length ? names(e.for) : ''); });
-    may.forEach((it) => { h += printEntry(it.time ? `Maybe ${pretty(it.time, true)}` : 'Maybe', it.title, (it.for || []).length ? names(it.for) : ''); });
+  if (!groups.length) h += '<p class="pempty">Nothing scheduled this month.</p>';
+  groups.forEach((g) => {
+    h += `<section class="daygroup"><div class="daylabel">${esc(g.label)}</div>`;
+    g.entries.forEach((e) => { h += printEntry(e.time, e.title, e.who); });
     h += '</section>';
-  }
-  if (!any) h += '<p class="pempty">Nothing scheduled this month.</p>';
+  });
   return h + '</div></div>';
 }
 
@@ -982,7 +998,7 @@ function openPrintFallback() {
   const node = document.querySelector('.monthprint');
   if (!node) return;
   const title = node.querySelector('.printsub')?.textContent || 'Month';
-  try { localStorage.setItem('hm:print', JSON.stringify({ title, html: node.outerHTML })); }
+  try { localStorage.setItem('hm:print', JSON.stringify({ title, html: node.outerHTML, model: monthPrintModel })); }
   catch (_) { info = 'Could not prepare a printable copy on this phone.'; render(); return; }
   // A real navigation (not an in-app print) so Safari, which can print, gets the page.
   const opened = window.open('print.html', '_blank');
@@ -1554,6 +1570,7 @@ async function enter() {
 }
 
 async function boot() {
+  if (location.hash === '#month') view = 'month';
   applyTheme(theme);
   consumeGcalQuery();
   readIncoming();
