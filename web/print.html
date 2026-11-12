@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Print month</title>
+  <style>
+    body { margin: 0; color: #111; background: #fff; font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 12px 16px 40px; }
+    .bar { position: sticky; top: 0; display: flex; gap: 8px; padding: 10px 0; background: #fff; }
+    button { font: inherit; font-weight: 700; padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: #fff; }
+    button.primary { background: #1e2923; color: #fff; border-color: #1e2923; }
+    .hint { background: #f4f1ea; border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+    h2 { font: 400 1.6rem/1.15 Georgia, "Times New Roman", serif; margin: 0; }
+    .printsub { font-weight: 700; margin: 2px 0 12px; }
+    .pday { display: grid; grid-template-columns: 72px 1fr; gap: 2px 12px; padding: 6px 0; border-bottom: 1px solid #ddd; }
+    .pdate { font-weight: 700; }
+    .dnum { font: 400 1.35rem/1 Georgia, serif; }
+    .dow { display: block; font-size: 0.78rem; font-weight: 400; color: #444; }
+    .pev { display: grid; grid-template-columns: 16px 1fr; gap: 1px 6px; align-items: start; padding: 3px 0; overflow-wrap: anywhere; }
+    .pev.extra, .pcust, .pempty { display: block; }
+    .ptime { font-variant-numeric: tabular-nums; color: #333; margin-right: 0.35em; }
+    .ptitle { font-weight: 700; }
+    .pwho { display: block; color: #333; }
+    .pempty, .pcust { color: #333; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-top: 0.4em; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .shead { font-weight: 700; padding: 14px 0 6px; }
+    @media print {
+      .noprint { display: none !important; }
+      .wrap { max-width: none; padding: 0; }
+      .pev { break-inside: avoid; page-break-inside: avoid; }
+      .dow, .ptime, .pwho, .pempty, .pcust { color: #111; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="bar noprint">
+      <button class="primary" id="print" type="button">Print</button>
+      <button id="share" type="button">Share</button>
+    </div>
+    <p class="hint noprint" id="hint" hidden>This installed app can't open the print dialog. Tap Share and choose Print, or save the file and print it from there. If this page opened in Safari, tap Print above.</p>
+    <div id="doc"><p>Nothing to print. Go back to Month and tap Print again.</p></div>
+  </div>
+  <script type="module">
+    import { buildPdf } from './printpdf.js';
+
+    const hint = document.getElementById('hint');
+    const shareBtn = document.getElementById('share');
+    let payload = null;
+    try { payload = JSON.parse(localStorage.getItem('hm:print') || 'null'); } catch (_) { payload = null; }
+    if (payload && payload.html) {
+      document.title = payload.title || 'Month';
+      document.getElementById('doc').innerHTML = payload.html;
+    }
+    shareBtn.textContent = navigator.share ? 'Share' : 'Save PDF';
+
+    const standalone = () => navigator.standalone === true || (window.matchMedia && ['standalone', 'fullscreen', 'minimal-ui'].some((m) => matchMedia(`(display-mode: ${m})`).matches));
+    const monthText = () => (document.querySelector('.monthprint') || document.getElementById('doc')).innerText;
+    const fileName = () => ((document.title || 'month').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'month') + '.pdf';
+
+    function saveFile(file) {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url; a.download = file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    }
+
+    async function share() {
+      const text = monthText();
+      const title = document.title || 'Month';
+      const file = new File([buildPdf(text)], fileName(), { type: 'application/pdf' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title }); return; }
+      } catch (err) { if (err && err.name === 'AbortError') return; }
+      try {
+        if (navigator.share) { await navigator.share({ title, text }); return; }
+      } catch (err) { if (err && err.name === 'AbortError') return; }
+      saveFile(file);
+    }
+
+    document.getElementById('print').addEventListener('click', () => window.print());
+    shareBtn.addEventListener('click', () => { share(); });
+
+    if (payload && payload.html) {
+      let started = false;
+      window.addEventListener('beforeprint', () => { started = true; hint.hidden = true; });
+      setTimeout(() => {
+        try { window.print(); } catch (_) { /* the button and Share remain */ }
+        setTimeout(() => { if (!started && standalone()) hint.hidden = false; }, 700);
+      }, 60);
+    }
+  </script>
+</body>
+</html>
