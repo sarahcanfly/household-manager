@@ -151,6 +151,19 @@ a { color: var(--accent); }
 .ttitle { display: block; font-weight: 700; overflow-wrap: anywhere; }
 .tmeta { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 0.85rem; color: var(--muted); }
 .todo .linkish { margin: 4px 0 6px; }
+.kids .kempty { color: var(--muted); font-size: 0.92rem; margin: 2px 0 10px; }
+.kids .btn { margin: 2px 0 8px; }
+.krow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.krow:first-of-type { border-top: 0; }
+.lasid {
+  font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.03em; border: 1px solid var(--line); background: var(--soft); color: inherit;
+  border-radius: 8px; padding: 6px 10px; min-height: 44px; font-weight: 700; white-space: nowrap; text-align: right;
+}
+.lasidk { display: block; font-family: var(--body, inherit); font-size: 0.65rem; letter-spacing: 0.08em; font-weight: 700; color: var(--muted); }
+.knote { flex-basis: 100%; }
+.lasid:hover { border-color: var(--accent); }
+.lasid.empty { border: 0; background: none; color: var(--muted); font-weight: 400; font-family: inherit; padding: 8px 0; min-height: 0; }
 .kindtag { display: inline-block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 
 /* ---------- month ---------- */

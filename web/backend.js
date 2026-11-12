@@ -8,6 +8,8 @@ const toEvent = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.tim
 const toPending = (r) => ({ id: r.id, title: r.title, date: r.date, time: hm(r.time), for: r.for_ids || [], where: r.place || '', note: r.note || '', source: r.source, sourceRef: r.source_ref || '', confidence: r.confidence, kind: r.kind || 'event' });
 const toTask = (r) => ({ id: r.id, title: r.title, due: r.due, for: r.for_ids || [], note: r.note || '', done: !!r.done, source: r.source || '' });
 const taskRow = (t) => ({ title: t.title, due: t.due, for_ids: t.for || [], note: t.note || '' });
+const toKid = (r) => ({ id: r.id, name: r.name, school: r.school || '', lasid: r.lasid || '', notes: r.notes || '', sort: r.sort || 0 });
+const kidRow = (k) => ({ name: k.name, school: k.school || '', lasid: k.lasid || '', notes: k.notes || '', sort: k.sort || 0 });
 const toIdea = (r) => ({ id: r.id, title: r.title, date: r.date || '', time: hm(r.time), for: r.for_ids || [], cost: r.cost || '', link: r.link || '', note: r.note || '' });
 const eventRow = (e) => ({ title: e.title, date: e.date, time: e.time || null, end_time: (e.time && e.end) || null, for_ids: e.for || [], driver: e.driver || null, with_us: e.withUs || [], place: e.where || '', note: e.note || '' });
 const pendingPayload = (p) => ({ id: p.id, title: p.title, date: p.date, time: p.time || '', for_ids: p.for || [], driver: p.driver || '', with_us: p.withUs || [], place: p.where || '', note: p.note || '' });
@@ -37,15 +39,16 @@ export async function createLiveBackend(cfg) {
     async isAllowed() { return !!ok(await sb.rpc('am_i_household')); },
 
     async load() {
-      const [m, e, p, i, t, s] = await Promise.all([
+      const [m, e, p, i, t, kd, s] = await Promise.all([
         sb.from('members').select('*').order('sort'),
         sb.from('events').select('*').order('date').order('time', { nullsFirst: true }),
         sb.from('pending').select('*').order('date'),
         sb.from('ideas').select('*').order('created_at'),
         sb.from('tasks').select('*').eq('done', false).order('due'),
+        sb.from('kids').select('*').order('sort').order('name'),
         sb.from('settings').select('value').eq('key', 'morning').maybeSingle(),
       ]);
-      return { members: ok(m), events: ok(e).map(toEvent), pending: ok(p).map(toPending), ideas: ok(i).map(toIdea), tasks: ok(t).map(toTask), morning: (ok(s) || {}).value || null };
+      return { members: ok(m), events: ok(e).map(toEvent), pending: ok(p).map(toPending), ideas: ok(i).map(toIdea), tasks: ok(t).map(toTask), kids: ok(kd).map(toKid), morning: (ok(s) || {}).value || null };
     },
     async settings() {
       const rows = ok(await sb.from('settings').select('key,value'));
@@ -59,7 +62,7 @@ export async function createLiveBackend(cfg) {
       let t = null;
       const fire = () => { clearTimeout(t); t = setTimeout(cb, 400); };
       const ch = sb.channel('household');
-      for (const table of ['events', 'pending', 'ideas', 'members', 'tasks']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, fire);
+      for (const table of ['events', 'pending', 'ideas', 'members', 'tasks', 'kids']) ch.on('postgres_changes', { event: '*', schema: 'public', table }, fire);
       ch.subscribe();
       return () => sb.removeChannel(ch);
     },
@@ -78,6 +81,10 @@ export async function createLiveBackend(cfg) {
     async setTaskDone(id, done) { ok(await sb.from('tasks').update({ done, done_at: done ? new Date().toISOString() : null }).eq('id', id)); },
     async deleteTask(id) { ok(await sb.from('tasks').delete().eq('id', id)); },
     async restoreTask(t) { ok(await sb.from('tasks').upsert({ id: t.id, ...taskRow(t), done: false, done_at: null, source: t.source || 'manual' })); },
+    async addKid(k) { ok(await sb.from('kids').insert({ id: k.id, ...kidRow(k) })); },
+    async updateKid(k) { ok(await sb.from('kids').update(kidRow(k)).eq('id', k.id)); },
+    async deleteKid(id) { ok(await sb.from('kids').delete().eq('id', id)); },
+    async restoreKid(k) { ok(await sb.from('kids').upsert({ id: k.id, ...kidRow(k) })); },
     async reminders() { return ok(await sb.from('reminders').select('*').order('created_at')) || []; },
     async deleteReminder(id) { ok(await sb.from('reminders').delete().eq('id', id)); },
     async rateEvent(t) { ok(await sb.from('event_taste').insert({ title: t.title, kind: t.kind || 'event', place: t.where || '', vote: t.vote, how: t.how || 'rated' })); },
