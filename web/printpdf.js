@@ -263,47 +263,62 @@ export function buildMonthPdf(model) {
     textAt(label ? `${label}  continued` : 'continued', MARGIN, PAGE_H - MARGIN - 12, 10, true);
     yL = yR = PAGE_H - MARGIN - 28;
   }
-  function roomFor(h) {
-    if (yOf() - h >= MARGIN) return;
-    advance();
-    if (yOf() - h < MARGIN) advance();
-  }
-
   const groups = m.groups || [];
+  const pageRoom = PAGE_H - MARGIN - 28 - MARGIN;
+  const paintHeading = (text) => {
+    const top = yOf();
+    textAt(text, xOf(), top - 11, 10, true);
+    cmd('0.8 0.8 0.8 RG');
+    cmd('0.6 w');
+    const x = xOf();
+    cmd(`${n(x)} ${n(top - 14)} m`);
+    cmd(`${n(x + colW)} ${n(top - 14)} l`);
+    cmd('S');
+    setY(top - 16);
+  };
+  const paintEntry = (entry, lines) => {
+    const h = lines.length * 11 + 3;
+    const ey = yOf();
+    textAt(entry.time || '', xOf(), ey - 9, 8, false, '0.25 0.25 0.25');
+    lines.forEach((words, i) => {
+      let cursor = xOf() + 54;
+      words.forEach((word) => {
+        textAt(word.t, cursor, ey - 9 - i * 11, 9, word.bold);
+        cursor += textWidth(word.t, 9);
+      });
+    });
+    setY(ey - h);
+  };
   if (!groups.length) textAt('Nothing scheduled this month.', MARGIN, yOf() - 14, 10, false);
   groups.forEach((group) => {
     const entries = (group.entries || []).map((entry) => ({ entry, lines: entryLines(entry, titleW) }));
-    const firstH = entries.length ? entries[0].lines.length * 11 + 3 : 0;
-    roomFor(16 + firstH);
-    const lx = xOf();
-    const top = yOf();
-    textAt(group.label || '', lx, top - 11, 10, true);
-    cmd('0.8 0.8 0.8 RG');
-    cmd('0.6 w');
-    cmd(`${n(lx)} ${n(top - 14)} m`);
-    cmd(`${n(lx + colW)} ${n(top - 14)} l`);
-    cmd('S');
-    setY(top - 16);
-    entries.forEach(({ entry, lines }, idx) => {
-      const h = lines.length * 11 + 3;
-      const before = `${col}:${n(yOf())}`;
-      roomFor(h);
-      if (`${col}:${n(yOf())}` !== before && idx > 0) {
-        textAt(group.label || '', xOf(), yOf() - 11, 10, true);
-        setY(yOf() - 16);
-        roomFor(h);
+    const heights = entries.map((e) => e.lines.length * 11 + 3);
+    const total = 16 + heights.reduce((sum, h) => sum + h, 0);
+    const room = () => yOf() - MARGIN;
+    const ahead = () => (col === 0 ? yR - MARGIN : pageRoom);
+    // Keep a day in one column when the next column can hold it. Only a day taller than a column is continued.
+    if (total > room() && total <= ahead()) advance();
+    else if (total > room() && col === 0 && total <= pageRoom) { advance(); advance(); }
+    if (total <= room()) {
+      paintHeading(group.label || '');
+      entries.forEach((e) => paintEntry(e.entry, e.lines));
+      setY(yOf() - 6);
+      return;
+    }
+    let i = 0;
+    let continued = false;
+    while (i < entries.length) {
+      if (yOf() - (16 + heights[i]) < MARGIN) {
+        advance();
+        if (yOf() - (16 + heights[i]) < MARGIN) advance();
       }
-      const ey = yOf();
-      textAt(entry.time || '', xOf(), ey - 9, 8, false, '0.25 0.25 0.25');
-      lines.forEach((words, i) => {
-        let cursor = xOf() + 54;
-        words.forEach((word) => {
-          textAt(word.t, cursor, ey - 9 - i * 11, 9, word.bold);
-          cursor += textWidth(word.t, 9);
-        });
-      });
-      setY(ey - h);
-    });
+      paintHeading(continued ? `${group.label} (cont.)` : (group.label || ''));
+      continued = true;
+      while (i < entries.length && yOf() - heights[i] >= MARGIN) {
+        paintEntry(entries[i].entry, entries[i].lines);
+        i++;
+      }
+    }
     setY(yOf() - 6);
   });
   pages.push(ops.join('\n'));
