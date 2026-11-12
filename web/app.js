@@ -1,5 +1,5 @@
 // Household Manager — the phone app. Plain JavaScript, no build step.
-// Screens: Week, Month, Shelf, Inbox, Ask, plus the Household sheet.
+// Screens: Week, Month, Kids, Shelf, Inbox, Ask, plus the Household sheet.
 
 import { createDemoBackend } from './demo.js';
 
@@ -199,14 +199,14 @@ function render() {
     + (api.mode === 'demo' ? '<div class="banner">Demo with sample data. Nothing is saved.</div>' : '')
     + (offline ? '<div class="banner">You are offline. Changes will fail until you reconnect.</div>' : '')
     + '<div class="tabs" role="tablist">'
-    + tab('week', 'Week') + tab('month', 'Month')
+    + tab('week', 'Week') + tab('kids', 'Kids') + tab('month', 'Month')
     + tab('shelf', `Shelf<span class="count">${state.ideas.length}</span>`)
     + tab('inbox', `Inbox${state.pending.length ? `<span class="count">${state.pending.length}</span>` : ''}`)
     + tab('ask', `Ask${waiting.length ? `<span class="count">${waiting.length}</span>` : ''}`)
     + '</div>'
-    + (view === 'week' ? weekHtml() : view === 'month' ? monthHtml() : view === 'shelf' ? shelfHtml() : view === 'ask' ? askHtml() : inboxHtml())
+    + (view === 'week' ? weekHtml() : view === 'month' ? monthHtml() : view === 'kids' ? kidsViewHtml() : view === 'shelf' ? shelfHtml() : view === 'ask' ? askHtml() : inboxHtml())
     + bulkBarHtml()
-    + ((view === 'inbox' && pickedCount) || view === 'ask' ? '' : '<button class="fab" data-act="open-add">+ Add</button>')
+    + ((view === 'inbox' && pickedCount) || view === 'ask' || view === 'kids' ? '' : '<button class="fab" data-act="open-add">+ Add</button>')
     + (sheet ? sheetHtml() : '')
     + (errMsg ? `<div class="toast" role="alert"><span>${esc(errMsg)}</span><button data-act="dismiss">Dismiss</button></div>`
       : undo ? `<div class="toast" role="status"><span>${esc(undo.msg)}</span><button data-act="undo">Undo</button></div>`
@@ -312,7 +312,7 @@ function weekHtml() {
     });
     body += '</div></section>';
   }
-  return filterHtml() + kidsHtml() + tasksHtml()
+  return filterHtml() + tasksHtml()
     + `<div class="weekbar"><span class="range">${range}</span><span class="nav">`
     + '<button data-act="week" data-d="-1" aria-label="Previous week">‹</button>'
     + '<button data-act="week" data-d="0">Today</button>'
@@ -320,6 +320,10 @@ function weekHtml() {
 }
 
 const kidList = () => (state.kids || []).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0) || String(a.name).localeCompare(String(b.name)));
+
+function kidsViewHtml() {
+  return '<p class="note" style="margin-top:12px">Names and school LASIDs, kept off the calendar. Tap a number to copy it.</p>' + kidsHtml();
+}
 
 function kidsHtml() {
   const list = kidList();
@@ -743,7 +747,7 @@ function kidFormHtml() {
   const isEdit = !!kidDraft.id;
   const dis = busy ? ' disabled' : '';
   return `<h2>${isEdit ? 'Edit kid' : 'Add a kid'}</h2>`
-    + '<p class="note">Name, school, and the state student ID. On the week, tap the number to copy it.</p>'
+    + '<p class="note">Name, school, and the state student ID. On the Kids tab, tap the number to copy it.</p>'
     + `<div class="field"><label for="k-name">Name</label><input type="text" id="k-name" data-autofocus maxlength="80" value="${esc(kidDraft.name)}" placeholder="Name"></div>`
     + `<div class="field"><label for="k-school">School</label><input type="text" id="k-school" maxlength="120" value="${esc(kidDraft.school)}" placeholder="School"></div>`
     + `<div class="field"><label for="k-lasid">LASID</label><input type="text" id="k-lasid" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="32" value="${esc(kidDraft.lasid)}" placeholder="State student ID"></div>`

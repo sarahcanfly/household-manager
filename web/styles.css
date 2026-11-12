@@ -44,7 +44,7 @@
 :root[data-theme="morning"] .mcell { border: 1px solid var(--line); }
 :root[data-theme="morning"] .mcell.off { border-color: transparent; }
 :root[data-theme="morning"] .tabs { border-bottom: 1px solid var(--line); padding-bottom: 0; gap: 0; }
-:root[data-theme="morning"] .tab { border-radius: 0; padding: 10px 12px 11px; color: var(--muted); font-weight: 600; }
+:root[data-theme="morning"] .tab { border-radius: 0; padding: 10px 8px 11px; color: var(--muted); font-weight: 600; }
 :root[data-theme="morning"] .tab[aria-selected="true"] { background: none; color: var(--ink); box-shadow: inset 0 -3px 0 var(--ink); }
 :root[data-theme="morning"] .filters { padding-top: 12px; }
 :root[data-theme="morning"] .range, :root[data-theme="morning"] .mtitle { font: 600 1.2rem/1.2 var(--display); }
@@ -79,13 +79,13 @@ a { color: var(--accent); }
 .linkish:hover { color: var(--ink); }
 
 .tabs {
-  position: sticky; top: 0; z-index: 5; display: flex; gap: 4px;
+  position: sticky; top: 0; z-index: 5; display: flex; gap: 2px;
   background: var(--bg); padding: 8px 0 10px; margin: 0 -16px; padding-inline: 16px;
   overflow-x: auto; scrollbar-width: none;
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
-  border: 0; background: transparent; padding: 8px 12px; border-radius: 999px;
+  border: 0; background: transparent; padding: 8px 8px; border-radius: 999px;
   color: var(--muted); font-weight: 700; font-size: 0.95rem; white-space: nowrap;
 }
 .tab[aria-selected="true"] { background: var(--ink); color: var(--bg); }
