@@ -1,5 +1,5 @@
 // Household Manager — the phone app. Plain JavaScript, no build step.
-// Screens: Week, Month, Kids, Shelf, Inbox, Ask, plus the Household sheet.
+// Screens: Week, Month, Shelf, Inbox, Kids, Ask, plus the Household sheet.
 
 import { createDemoBackend } from './demo.js';
 
@@ -199,9 +199,10 @@ function render() {
     + (api.mode === 'demo' ? '<div class="banner">Demo with sample data. Nothing is saved.</div>' : '')
     + (offline ? '<div class="banner">You are offline. Changes will fail until you reconnect.</div>' : '')
     + '<div class="tabs" role="tablist">'
-    + tab('week', 'Week') + tab('kids', 'Kids') + tab('month', 'Month')
+    + tab('week', 'Week') + tab('month', 'Month')
     + tab('shelf', `Shelf<span class="count">${state.ideas.length}</span>`)
     + tab('inbox', `Inbox${state.pending.length ? `<span class="count">${state.pending.length}</span>` : ''}`)
+    + tab('kids', 'Kids')
     + tab('ask', `Ask${waiting.length ? `<span class="count">${waiting.length}</span>` : ''}`)
     + '</div>'
     + (view === 'week' ? weekHtml() : view === 'month' ? monthHtml() : view === 'kids' ? kidsViewHtml() : view === 'shelf' ? shelfHtml() : view === 'ask' ? askHtml() : inboxHtml())
