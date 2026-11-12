@@ -49,6 +49,7 @@
 <body>
   <div class="wrap">
     <div class="bar noprint">
+      <button id="back" type="button">Back</button>
       <button class="primary" id="print" type="button">Print</button>
       <button id="share" type="button">Share</button>
     </div>
@@ -56,7 +57,7 @@
     <div id="doc"><p>Nothing to print. Go back to Month and tap Print again.</p></div>
   </div>
   <script type="module">
-    import { buildPdf } from './printpdf.js';
+    import { buildMonthPdf, buildPdf } from './printpdf.js';
 
     const hint = document.getElementById('hint');
     const shareBtn = document.getElementById('share');
@@ -80,10 +81,28 @@
       setTimeout(() => URL.revokeObjectURL(url), 1500);
     }
 
+    function leave() {
+      // The installed app has no browser back button. A window opened on top of Month
+      // can close; otherwise step back, and if that does nothing open the app on Month.
+      if (window.opener && !window.opener.closed) {
+        try { window.opener.focus(); window.close(); } catch (_) { /* still navigate */ }
+        setTimeout(() => { if (!window.closed) location.replace('./#month'); }, 250);
+        return;
+      }
+      const here = location.href;
+      if (history.length > 1) {
+        history.back();
+        setTimeout(() => { if (location.href === here) location.replace('./#month'); }, 400);
+        return;
+      }
+      location.replace('./#month');
+    }
+
     async function share() {
       const text = monthText();
       const title = document.title || 'Month';
-      const file = new File([buildPdf(text)], fileName(), { type: 'application/pdf' });
+      const bytes = payload && payload.model ? buildMonthPdf(payload.model) : buildPdf(text);
+      const file = new File([bytes], fileName(), { type: 'application/pdf' });
       try {
         if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title }); return; }
       } catch (err) { if (err && err.name === 'AbortError') return; }
@@ -93,6 +112,7 @@
       saveFile(file);
     }
 
+    document.getElementById('back').addEventListener('click', leave);
     document.getElementById('print').addEventListener('click', () => window.print());
     shareBtn.addEventListener('click', () => { share(); });
 
