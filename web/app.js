@@ -1,5 +1,5 @@
 // Household Manager — the phone app. Plain JavaScript, no build step.
-// Screens: Week, Month, Shelf, Inbox, Ask, plus the Household sheet.
+// Screens: Week, Month, Shelf, Inbox, Kids, Ask, plus the Household sheet.
 
 import { createDemoBackend } from './demo.js';
 
@@ -22,7 +22,8 @@ let state = null, view = 'week', weekOffset = 0, monthOffset = 0, filterId = '';
 let sheet = null, addKind = 'event', schedulingId = null, flashId = null;
 let undo = null, busy = false, errMsg = '', info = '', settings = null;
 let tasksOpen = false;
-let draft = null, memberDraft = null, setupDraft = null, settingsDraft = null;
+let draft = null, kidDraft = null, copiedLasid = '';
+let memberDraft = null, setupDraft = null, settingsDraft = null;
 let intakeMode = 'text', intakeText = '', fileData = '', fileType = '', filePreview = '', fileName = '';
 let parsing = false, parseNote = '', edits = {}, picked = {};
 let askText = '', askLog = [], askBusy = false, waiting = [], listening = false, recognizer = null;
@@ -201,11 +202,12 @@ function render() {
     + tab('week', 'Week') + tab('month', 'Month')
     + tab('shelf', `Shelf<span class="count">${state.ideas.length}</span>`)
     + tab('inbox', `Inbox${state.pending.length ? `<span class="count">${state.pending.length}</span>` : ''}`)
+    + tab('kids', 'Kids')
     + tab('ask', `Ask${waiting.length ? `<span class="count">${waiting.length}</span>` : ''}`)
     + '</div>'
-    + (view === 'week' ? weekHtml() : view === 'month' ? monthHtml() : view === 'shelf' ? shelfHtml() : view === 'ask' ? askHtml() : inboxHtml())
+    + (view === 'week' ? weekHtml() : view === 'month' ? monthHtml() : view === 'kids' ? kidsViewHtml() : view === 'shelf' ? shelfHtml() : view === 'ask' ? askHtml() : inboxHtml())
     + bulkBarHtml()
-    + ((view === 'inbox' && pickedCount) || view === 'ask' ? '' : '<button class="fab" data-act="open-add">+ Add</button>')
+    + ((view === 'inbox' && pickedCount) || view === 'ask' || view === 'kids' ? '' : '<button class="fab" data-act="open-add">+ Add</button>')
     + (sheet ? sheetHtml() : '')
     + (errMsg ? `<div class="toast" role="alert"><span>${esc(errMsg)}</span><button data-act="dismiss">Dismiss</button></div>`
       : undo ? `<div class="toast" role="status"><span>${esc(undo.msg)}</span><button data-act="undo">Undo</button></div>`
@@ -316,6 +318,32 @@ function weekHtml() {
     + '<button data-act="week" data-d="-1" aria-label="Previous week">‹</button>'
     + '<button data-act="week" data-d="0">Today</button>'
     + '<button data-act="week" data-d="1" aria-label="Next week">›</button></span></div>' + body;
+}
+
+const kidList = () => (state.kids || []).slice().sort((a, b) => (a.sort || 0) - (b.sort || 0) || String(a.name).localeCompare(String(b.name)));
+
+function kidsViewHtml() {
+  return '<p class="note" style="margin-top:12px">Names and school LASIDs, kept off the calendar. Tap a number to copy it.</p>' + kidsHtml();
+}
+
+function kidsHtml() {
+  const list = kidList();
+  const rows = list.map((k) => {
+    const copied = copiedLasid === k.id;
+    const idBtn = k.lasid
+      ? `<button class="lasid" data-act="copy-lasid" data-id="${esc(k.id)}" aria-label="Copy LASID">${copied ? 'Copied' : `<span class="lasidk">LASID</span>${esc(k.lasid)}`}</button>`
+      : '<span class="lasid empty">No LASID</span>';
+    const meta = [k.school ? `<span>${esc(k.school)}</span>` : '', k.notes ? `<span class="knote">${esc(k.notes)}</span>` : ''].join('');
+    return `<div class="krow"><button class="tbody" data-act="kid" data-id="${esc(k.id)}"><span class="ttitle">${esc(k.name)}</span>`
+      + (meta ? `<span class="tmeta">${meta}</span>` : '') + `</button>${idBtn}</div>`;
+  }).join('');
+  return '<div class="todo kids"><div class="todohead">Kids info</div>'
+    + (list.length ? '' : '<p class="kempty">No kids saved yet. Add one to keep a name and school LASID here.</p>')
+    + rows
+    + (list.length
+      ? '<button class="linkish" data-act="kid-add">Add a kid</button>'
+      : '<button class="btn" data-act="kid-add">Add a kid</button>')
+    + '</div>';
 }
 
 function tasksHtml() {
@@ -711,6 +739,29 @@ function driverHtml() {
   return driverSelectHtml('f-driver', draft.driver);
 }
 
+function captureKid() {
+  if (!kidDraft) return;
+  ['name', 'school', 'lasid', 'notes'].forEach((k) => { const el = document.getElementById('k-' + k); if (el) kidDraft[k] = el.value; });
+}
+
+function kidFormHtml() {
+  const isEdit = !!kidDraft.id;
+  const dis = busy ? ' disabled' : '';
+  return `<h2>${isEdit ? 'Edit kid' : 'Add a kid'}</h2>`
+    + '<p class="note">Name, school, and the state student ID. On the Kids tab, tap the number to copy it.</p>'
+    + `<div class="field"><label for="k-name">Name</label><input type="text" id="k-name" data-autofocus maxlength="80" value="${esc(kidDraft.name)}" placeholder="Name"></div>`
+    + `<div class="field"><label for="k-school">School</label><input type="text" id="k-school" maxlength="120" value="${esc(kidDraft.school)}" placeholder="School"></div>`
+    + `<div class="field"><label for="k-lasid">LASID</label><input type="text" id="k-lasid" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="32" value="${esc(kidDraft.lasid)}" placeholder="State student ID"></div>`
+    + `<div class="field"><label for="k-notes">Notes</label><textarea id="k-notes" maxlength="500">${esc(kidDraft.notes)}</textarea></div>`
+    + `<button class="primary" data-act="save-kid"${dis}>${busy ? 'Saving…' : isEdit ? 'Save changes' : 'Add kid'}</button>`
+    + (isEdit ? `<button class="primary danger" data-act="del-kid" data-id="${esc(kidDraft.id)}"${dis}>Delete</button>` : '')
+    + '<button class="ghost" data-act="close">Cancel</button>';
+}
+
+function nextKidSort() {
+  return (state.kids || []).reduce((m, k) => Math.max(m, k.sort || 0), 0) + 1;
+}
+
 function captureDraft() {
   if (!draft) return;
   ['title', 'date', 'time', 'end', 'where', 'cost', 'link', 'note'].forEach((k) => { const el = document.getElementById('f-' + k); if (el) draft[k] = el.value; });
@@ -952,6 +1003,7 @@ function siriHtml() {
 function sheetHtml() {
   let inner;
   if (sheet.mode === 'household') inner = householdHtml();
+  else if (sheet.mode === 'kid') inner = kidFormHtml();
   else if (sheet.mode === 'event') {
     const e = eventById(sheet.id);
     if (!e) { sheet = null; return ''; }
@@ -1156,6 +1208,7 @@ root.addEventListener('click', async (ev) => {
   if (act === 'scrim' && ev.target !== t) return;
 
   if (sheet && (sheet.mode === 'add' || sheet.mode === 'edit')) captureDraft();
+  if (sheet && sheet.mode === 'kid') captureKid();
   if (sheet && sheet.mode === 'household') captureMembers();
   if (!sheet && view === 'inbox') { captureIntake(); capturePending(); }
   if (!sheet && view === 'ask') captureAsk();
@@ -1261,7 +1314,7 @@ root.addEventListener('click', async (ev) => {
       busy = true; render();
       try { await api.deleteReminder(id); rems = rems.filter((r) => r.id !== id); info = 'Reminder removed.'; } catch (err) { errMsg = err.message; }
       busy = false; render(); break;
-    case 'close': case 'scrim': rems = null; fromEmail = null; sheet = null; draft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; gcalCals = null; render(); break;
+    case 'close': case 'scrim': rems = null; fromEmail = null; sheet = null; draft = null; kidDraft = null; memberDraft = null; settingsDraft = null; siri = null; pushState = ''; gcalCals = null; render(); break;
     case 'gcal-pick': gcalPick = id; render(); break;
     case 'gcal-cancel': gcalCals = null; render(); break;
     case 'gcal-start': {
@@ -1346,6 +1399,62 @@ root.addEventListener('click', async (ev) => {
       busy = true; render();
       try { await api.revokeSiriKey(); siri = { has: false }; info = 'Siri key turned off.'; } catch (err) { errMsg = err.message; }
       busy = false; render(); break;
+    case 'kid-add': {
+      if (info === 'LASID copied.') info = '';
+      copiedLasid = '';
+      kidDraft = { id: '', name: '', school: '', lasid: '', notes: '', sort: nextKidSort() };
+      sheet = { mode: 'kid' }; render(); break;
+    }
+    case 'kid': {
+      const k = (state.kids || []).find((x) => x.id === id); if (!k) return;
+      if (info === 'LASID copied.') info = '';
+      copiedLasid = '';
+      kidDraft = { id: k.id, name: k.name, school: k.school || '', lasid: k.lasid || '', notes: k.notes || '', sort: k.sort || 0 };
+      sheet = { mode: 'kid', id: k.id }; render(); break;
+    }
+    case 'save-kid': {
+      const name = (kidDraft?.name || '').trim();
+      if (!name) { document.getElementById('k-name')?.focus(); return; }
+      const row = { id: kidDraft.id || uid(), name, school: kidDraft.school.trim(), lasid: kidDraft.lasid.trim(), notes: kidDraft.notes.trim(), sort: kidDraft.sort ?? nextKidSort() };
+      const editing = !!kidDraft.id;
+      await mutate(() => (editing ? api.updateKid(row) : api.addKid(row)), () => { sheet = null; kidDraft = null; });
+      break;
+    }
+    case 'del-kid': {
+      const k = (state.kids || []).find((x) => x.id === id); if (!k) return;
+      await mutate(() => api.deleteKid(id), () => { sheet = null; kidDraft = null; showUndo(`Deleted "${k.name}"`, () => mutate(() => api.restoreKid(k))); });
+      break;
+    }
+    case 'copy-lasid': {
+      const k = (state.kids || []).find((x) => x.id === id); if (!k || !k.lasid) return;
+      let okCopy = false;
+      try { await navigator.clipboard.writeText(k.lasid); okCopy = true; }
+      catch (_) {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = k.lasid; ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed'; ta.style.left = '-9999px';
+          document.body.appendChild(ta); ta.select();
+          okCopy = document.execCommand('copy');
+          ta.remove();
+        } catch (_) { okCopy = false; }
+      }
+      copiedLasid = okCopy ? k.id : '';
+      info = okCopy ? 'LASID copied.' : 'Could not copy it. The number is on the card if you need to select it.';
+      render();
+      if (okCopy) {
+        const mine = k.id;
+        setTimeout(() => {
+          if (copiedLasid !== mine || info !== 'LASID copied.') return;
+          copiedLasid = '';
+          info = '';
+          // A full redraw would wipe whatever is being typed in an open sheet.
+          if (sheet) { document.querySelector('.toast')?.remove(); return; }
+          render();
+        }, 1600);
+      }
+      break;
+    }
     case 'copy': {
       const el = document.getElementById(t.dataset.from);
       if (!el) return;

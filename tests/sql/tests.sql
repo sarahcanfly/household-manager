@@ -272,6 +272,35 @@ select pg_temp.check(
   )) = '{"added": 0, "past": 0, "dupe": 2}'::jsonb,
   'staging skips a longer form of an event or shelf item already kept');
 
+-- 5h. Kids info. A placeholder row only: no real student data.
+select pg_temp.as_user('alex@x.com');
+insert into public.kids (id, name, school, lasid, notes) values ('kid1', 'Placeholder', 'Test School', '0000000000', 'not a student');
+select pg_temp.check((select name from public.kids where id = 'kid1') = 'Placeholder' and (select lasid from public.kids where id = 'kid1') = '0000000000', 'household can save a school id');
+select pg_temp.check((select created_by from public.kids where id = 'kid1') = 'alex@x.com', 'kid row records who added it');
+update public.kids set school = 'Other School', notes = 'edited' where id = 'kid1';
+select pg_temp.check((select school from public.kids where id = 'kid1') = 'Other School' and (select notes from public.kids where id = 'kid1') = 'edited', 'household can edit a school id');
+delete from public.kids where id = 'kid1';
+select pg_temp.check((select count(*) from public.kids) = 0, 'household can remove a school id');
+do $$ begin
+  insert into public.kids (name) values ('   ');
+  raise exception 'FAIL: blank kid name inserted';
+exception when check_violation then raise notice 'ok - blank kid name refused';
+end $$;
+reset role;
+insert into public.kids (id, name, lasid) values ('hid', 'Placeholder', '0000000000');
+set role anon;
+select pg_temp.check((select count(*) from public.kids) = 0, 'anonymous sees no school ids');
+reset role;
+select pg_temp.as_user('stranger@x.com');
+select pg_temp.check((select count(*) from public.kids) = 0, 'stranger sees no school ids');
+do $$ begin
+  insert into public.kids (name) values ('Nope');
+  raise exception 'FAIL: stranger inserted a kid';
+exception when insufficient_privilege then raise notice 'ok - stranger cannot add a school id';
+end $$;
+reset role;
+delete from public.kids where id = 'hid';
+
 -- 6. Removing someone from allowed_users locks them out immediately
 delete from public.allowed_users where email = 'jordan@x.com';
 select pg_temp.as_user('jordan@x.com');
