@@ -174,6 +174,22 @@ a { color: var(--accent); }
 .shead { font-weight: 700; padding: 14px 0 6px; }
 .printonly { display: none; }
 
+/* Printed month: every day, every event. Kept out of the on-screen layout. */
+.monthprint { display: none; }
+.monthprint h2 { font: 400 1.55rem/1.15 var(--display); margin: 0; }
+.monthprint .printsub { font-weight: 700; margin: 2px 0 12px; }
+.monthprint .pday { display: grid; grid-template-columns: 72px 1fr; gap: 2px 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.monthprint .pdate { font-weight: 700; }
+.monthprint .dnum { font: 400 1.35rem/1 var(--display); }
+.monthprint .dow { display: block; font-size: 0.78rem; font-weight: 400; color: var(--muted); }
+.monthprint .pev { display: grid; grid-template-columns: 16px 1fr; gap: 1px 6px; align-items: start; padding: 3px 0; overflow-wrap: anywhere; }
+.monthprint .pev.extra, .monthprint .pcust, .monthprint .pempty { display: block; }
+.monthprint .ptime { font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 0.35em; }
+.monthprint .ptitle { font-weight: 700; }
+.monthprint .pwho { display: block; color: var(--muted); }
+.monthprint .pempty, .monthprint .pcust { color: var(--muted); }
+.monthprint .dot { margin-top: 0.4em; }
+
 /* ---------- shelf, inbox, ask ---------- */
 .note { color: var(--muted); font-size: 0.92rem; margin: 6px 0 14px; max-width: 60ch; }
 .card { background: var(--surface); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
@@ -269,8 +285,18 @@ textarea { min-height: 110px; resize: vertical; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
 @media print {
-  .tabs, .filters, .fab, .nav, .top, .toast, .bulkbar { display: none !important; }
+  .tabs, .filters, .fab, .nav, .top, .toast, .bulkbar, .scrim, .sheet { display: none !important; }
   .printonly { display: block; font-size: 1.2rem; margin-bottom: 8px; }
   body { background: #fff; color: #000; }
-  .mcell { border: 1px solid #ccc; }
+  .mcell { border: 1px solid #ccc; overflow: visible; height: auto; }
+  .mev, .mcust { white-space: normal; overflow: visible; }
+  /* The month grid keeps three events and clips the rest, so print the full day list instead. */
+  .mgrid, .mhead, .plist, .slist { display: none !important; }
+  .monthprint { display: block !important; }
+  .monthprint, .monthprint .dow, .monthprint .ptime, .monthprint .pwho, .monthprint .pempty, .monthprint .pcust,
+  .monthprint .ptitle, .monthprint h2, .monthprint .printsub, .monthprint .pdate { color: #111; }
+  .monthprint .pev { break-inside: avoid; page-break-inside: avoid; }
+  .monthprint .dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body:has(.monthprint) #root { max-width: none; min-height: 0; padding-bottom: 0; }
+  body:has(.monthprint) .banner { display: none !important; }
 }
