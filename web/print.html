@@ -12,24 +12,37 @@
     button.primary { background: #1e2923; color: #fff; border-color: #1e2923; }
     .hint { background: #f4f1ea; border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
     h2 { font: 400 1.6rem/1.15 Georgia, "Times New Roman", serif; margin: 0; }
-    .printsub { font-weight: 700; margin: 2px 0 12px; }
-    .pday { display: grid; grid-template-columns: 72px 1fr; gap: 2px 12px; padding: 6px 0; border-bottom: 1px solid #ddd; }
-    .pdate { font-weight: 700; }
-    .dnum { font: 400 1.35rem/1 Georgia, serif; }
-    .dow { display: block; font-size: 0.78rem; font-weight: 400; color: #444; }
-    .pev { display: grid; grid-template-columns: 16px 1fr; gap: 1px 6px; align-items: start; padding: 3px 0; overflow-wrap: anywhere; }
-    .pev.extra, .pcust, .pempty { display: block; }
-    .ptime { font-variant-numeric: tabular-nums; color: #333; margin-right: 0.35em; }
+    .printsub { font-weight: 700; margin: 2px 0 10px; }
+    .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #ccc; border: 1px solid #ccc; margin: 0 0 14px; }
+    .caldow, .calcell { background: #fff; }
+    .caldow { text-align: center; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 0; }
+    .calcell { min-height: 42px; padding: 3px 4px 4px; }
+    .calcell.off { background: #f4f4f4; }
+    .calnum { font-weight: 700; font-size: 0.85rem; line-height: 1.2; }
+    .calcell.today .calnum { display: inline-grid; place-items: center; min-width: 1.35em; height: 1.35em; padding: 0 3px; border-radius: 999px; background: #111; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .calwhere { font-size: 0.62rem; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .caldots { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px; align-items: center; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .calmore { font-size: 0.62rem; font-weight: 700; line-height: 1; }
+    .listhead { font-weight: 700; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 6px; }
+    .twocol { column-count: 2; column-gap: 24px; }
+    .daygroup { margin: 0 0 8px; }
+    .daylabel { font-weight: 700; border-bottom: 1px solid #ccc; padding-bottom: 1px; margin: 2px 0; }
+    .pentry { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 2px 0; }
+    .ptime { font-variant-numeric: tabular-nums; color: #333; }
+    .pbody { min-width: 0; overflow-wrap: anywhere; }
     .ptitle { font-weight: 700; }
-    .pwho { display: block; color: #333; }
-    .pempty, .pcust { color: #333; }
-    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-top: 0.4em; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .shead { font-weight: 700; padding: 14px 0 6px; }
+    .pwho { color: #333; }
+    .pwho::before { content: "· "; }
+    .pempty { color: #333; }
     @media print {
       .noprint { display: none !important; }
       .wrap { max-width: none; padding: 0; }
-      .pev { break-inside: avoid; page-break-inside: avoid; }
-      .dow, .ptime, .pwho, .pempty, .pcust { color: #111; }
+      .twocol { column-count: 2 !important; column-gap: 28px; }
+      .cal { break-inside: avoid; page-break-inside: avoid; }
+      .daylabel { break-after: avoid; page-break-after: avoid; }
+      .pentry { break-inside: avoid; page-break-inside: avoid; }
+      .calcell.today .calnum { color: #fff !important; }
     }
   </style>
 </head>
