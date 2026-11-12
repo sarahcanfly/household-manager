@@ -174,21 +174,32 @@ a { color: var(--accent); }
 .shead { font-weight: 700; padding: 14px 0 6px; }
 .printonly { display: none; }
 
-/* Printed month: every day, every event. Kept out of the on-screen layout. */
+/* Printed month: a calendar, then the events in two columns. Hidden on screen. */
 .monthprint { display: none; }
 .monthprint h2 { font: 400 1.55rem/1.15 var(--display); margin: 0; }
-.monthprint .printsub { font-weight: 700; margin: 2px 0 12px; }
-.monthprint .pday { display: grid; grid-template-columns: 72px 1fr; gap: 2px 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
-.monthprint .pdate { font-weight: 700; }
-.monthprint .dnum { font: 400 1.35rem/1 var(--display); }
-.monthprint .dow { display: block; font-size: 0.78rem; font-weight: 400; color: var(--muted); }
-.monthprint .pev { display: grid; grid-template-columns: 16px 1fr; gap: 1px 6px; align-items: start; padding: 3px 0; overflow-wrap: anywhere; }
-.monthprint .pev.extra, .monthprint .pcust, .monthprint .pempty { display: block; }
-.monthprint .ptime { font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 0.35em; }
+.monthprint .printsub { font-weight: 700; margin: 2px 0 10px; }
+.monthprint .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #ccc; border: 1px solid #ccc; margin: 0 0 14px; }
+.monthprint .caldow, .monthprint .calcell { background: #fff; }
+.monthprint .caldow { text-align: center; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 0; }
+.monthprint .calcell { min-height: 42px; padding: 3px 4px 4px; }
+.monthprint .calcell.off { background: #f4f4f4; }
+.monthprint .calnum { font-weight: 700; font-size: 0.85rem; line-height: 1.2; }
+.monthprint .calcell.today .calnum { display: inline-grid; place-items: center; min-width: 1.35em; height: 1.35em; padding: 0 3px; border-radius: 999px; background: #111; color: #fff; }
+.monthprint .calwhere { font-size: 0.62rem; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.monthprint .caldots { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px; align-items: center; }
+.monthprint .caldots .dot { width: 6px; height: 6px; margin: 0; }
+.monthprint .calmore { font-size: 0.62rem; font-weight: 700; line-height: 1; }
+.monthprint .listhead { font-weight: 700; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 6px; }
+.monthprint .twocol { column-count: 2; column-gap: 28px; }
+.monthprint .daygroup { margin: 0 0 8px; }
+.monthprint .daylabel { font-weight: 700; border-bottom: 1px solid #ccc; padding-bottom: 1px; margin: 2px 0 2px; }
+.monthprint .pentry { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 2px 0; }
+.monthprint .ptime { font-variant-numeric: tabular-nums; color: #333; }
+.monthprint .pbody { min-width: 0; overflow-wrap: anywhere; }
 .monthprint .ptitle { font-weight: 700; }
-.monthprint .pwho { display: block; color: var(--muted); }
-.monthprint .pempty, .monthprint .pcust { color: var(--muted); }
-.monthprint .dot { margin-top: 0.4em; }
+.monthprint .pwho { color: #333; }
+.monthprint .pwho::before { content: "· "; }
+.monthprint .pempty { color: #333; }
 
 /* ---------- shelf, inbox, ask ---------- */
 .note { color: var(--muted); font-size: 0.92rem; margin: 6px 0 14px; max-width: 60ch; }
@@ -288,15 +299,16 @@ textarea { min-height: 110px; resize: vertical; }
   .tabs, .filters, .fab, .nav, .top, .toast, .bulkbar, .scrim, .sheet { display: none !important; }
   .printonly { display: block; font-size: 1.2rem; margin-bottom: 8px; }
   body { background: #fff; color: #000; }
-  .mcell { border: 1px solid #ccc; overflow: visible; height: auto; }
-  .mev, .mcust { white-space: normal; overflow: visible; }
-  /* The month grid keeps three events and clips the rest, so print the full day list instead. */
+  .mcell { border: 1px solid #ccc; }
+  /* Screen grid clips after three events. Print uses the calendar plus the full list instead. */
   .mgrid, .mhead, .plist, .slist { display: none !important; }
   .monthprint { display: block !important; }
-  .monthprint, .monthprint .dow, .monthprint .ptime, .monthprint .pwho, .monthprint .pempty, .monthprint .pcust,
-  .monthprint .ptitle, .monthprint h2, .monthprint .printsub, .monthprint .pdate { color: #111; }
-  .monthprint .pev { break-inside: avoid; page-break-inside: avoid; }
+  .monthprint .cal { break-inside: avoid; page-break-inside: avoid; }
+  .monthprint .daylabel { break-after: avoid; page-break-after: avoid; }
+  .monthprint .pentry { break-inside: avoid; page-break-inside: avoid; }
+  .monthprint .calcell.today .calnum,
   .monthprint .dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .monthprint .calcell.today .calnum { color: #fff !important; }
   body:has(.monthprint) #root { max-width: none; min-height: 0; padding-bottom: 0; }
   body:has(.monthprint) .banner { display: none !important; }
 }

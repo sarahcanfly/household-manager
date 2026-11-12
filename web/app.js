@@ -385,52 +385,58 @@ function monthHtml() {
     + '<button data-act="month" data-d="0">Today</button>'
     + '<button data-act="month" data-d="1" aria-label="Next month">›</button>'
     + '<button data-act="print">Print</button></span></div>' + grid + list + maybeBlock
-    + monthPrintHtml({ label, prefix, daysIn, today, byDay, maybes });
+    + monthPrintHtml({ label, prefix, daysIn, startDow, today, byDay, maybes });
 }
 
-/** One line of a printed day: time, title, and the details the week view would show. */
-function printEventLine(e) {
-  const dm = e.driver && e.driver !== 'none' ? member(e.driver) : null;
-  const bits = [names(e.for || [])];
-  if (dm) bits.push(`${dm.name} driving`);
-  else if (needsDriver(e)) bits.push('No driver yet');
-  if ((e.withUs || []).length) bits.push(`${names(e.withUs)} with us`);
-  const aw = awayKids(e);
-  if (aw) bits.push(`${names(aw.kids)} at ${aw.where}`);
-  if (e.where) bits.push(e.where);
-  if (e.note) bits.push(e.note);
-  const when = e.time ? span(e, true) : 'All day';
-  return `<div class="pev"><span class="dot" style="${barStyle(e.for || [])}"></span><span class="pevtext"><span class="ptime">${esc(when)}</span> <span class="ptitle">${esc(e.title)}</span><span class="pwho">${esc(bits.filter(Boolean).join(' · '))}</span></span></div>`;
+/** One printed event. The date sits on the day group, so a column can break between events and not through one. */
+function printEntry(time, title, who) {
+  return `<div class="pentry"><span class="ptime">${esc(time)}</span><span class="pbody"><span class="ptitle">${esc(title)}</span>${who ? ` <span class="pwho">${esc(who)}</span>` : ''}</span></div>`;
 }
 
-/** Full month, one section per day. Hidden on screen; this is what Print actually prints.
-    The on-screen grid only mounts three events a day and clips the rest. */
+/** Calendar grid, then every event in two columns. Hidden on screen; the on-screen grid still clips to three. */
 function monthPrintHtml(p) {
   const house = adults().map((m) => m.name).join(' & ') || 'Household';
   const who = filterId ? names([filterId]) : '';
-  let h = `<div class="monthprint"><h2>${esc(house)}</h2><div class="printsub">${esc(p.label)}${who ? ' — ' + esc(who) : ''}</div>`;
-  for (let dn = 1; dn <= p.daysIn; dn++) {
-    const key = `${p.prefix}-${String(dn).padStart(2, '0')}`;
-    const d = parseYmd(key);
+  const maybesByDay = {};
+  p.maybes.forEach((it) => { (maybesByDay[it.date] = maybesByDay[it.date] || []).push(it); });
+  const onDay = (key) => {
     const evs = p.byDay[key] || [];
     const cust = custodyOn(key);
     const groups = cust ? cust.groups.filter((g) => !filterId || g.kids.includes(filterId)) : [];
+    return { evs, groups, may: maybesByDay[key] || [] };
+  };
+
+  let h = `<div class="monthprint"><h2>${esc(house)}</h2><div class="printsub">${esc(p.label)}${who ? ' — ' + esc(who) : ''}</div>`;
+  h += '<div class="cal">' + ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => `<div class="caldow">${d}</div>`).join('');
+  const total = Math.ceil((p.startDow + p.daysIn) / 7) * 7;
+  for (let i = 0; i < total; i++) {
+    const dn = i - p.startDow + 1;
+    if (dn < 1 || dn > p.daysIn) { h += '<div class="calcell off"></div>'; continue; }
+    const key = `${p.prefix}-${String(dn).padStart(2, '0')}`;
+    const { evs, groups } = onDay(key);
+    const cls = ['calcell', key === p.today ? 'today' : '', evs.length ? 'has' : '', groups.length ? 'away' : ''].filter(Boolean).join(' ');
+    const dots = evs.slice(0, 8).map((e) => `<span class="dot" style="${barStyle(e.for || [])}"></span>`).join('');
+    const where = groups.map((g) => g.where).filter(Boolean).join(', ');
+    h += `<div class="${cls}"><div class="calnum">${dn}</div>${where ? `<div class="calwhere">${esc(where)}</div>` : ''}${dots ? `<div class="caldots">${dots}${evs.length > 8 ? '<span class="calmore">+</span>' : ''}</div>` : ''}</div>`;
+  }
+  h += '</div><div class="listhead">Events</div><div class="twocol">';
+
+  let any = false;
+  for (let dn = 1; dn <= p.daysIn; dn++) {
+    const key = `${p.prefix}-${String(dn).padStart(2, '0')}`;
+    const { evs, groups, may } = onDay(key);
+    if (!evs.length && !groups.length && !may.length) continue;
+    any = true;
+    const d = parseYmd(key);
     const dayName = key === p.today ? 'Today' : DAYS[d.getDay()].slice(0, 3);
-    h += `<div class="pday${key === p.today ? ' is-today' : ''}"><div class="pdate"><span class="dnum">${d.getDate()}</span><span class="dow">${dayName}</span></div><div class="pbody">`;
-    groups.forEach((g) => { h += `<div class="pev pcust">${esc(names(g.kids))} at ${esc(g.where)}</div>`; });
-    if (!evs.length && !groups.length) h += '<div class="pev pempty">Nothing scheduled</div>';
-    evs.forEach((e) => { h += printEventLine(e); });
-    h += '</div></div>';
+    h += `<section class="daygroup"><div class="daylabel">${dayName} ${d.getDate()}</div>`;
+    groups.forEach((g) => { h += printEntry('All day', `At ${g.where}`, names(g.kids)); });
+    evs.forEach((e) => { h += printEntry(e.time ? span(e, true) : 'All day', e.title, (e.for || []).length ? names(e.for) : ''); });
+    may.forEach((it) => { h += printEntry(it.time ? `Maybe ${pretty(it.time, true)}` : 'Maybe', it.title, (it.for || []).length ? names(it.for) : ''); });
+    h += '</section>';
   }
-  if (p.maybes.length) {
-    h += '<div class="shead">Maybe, on the shelf</div>';
-    p.maybes.forEach((it) => {
-      const when = `${longDate(it.date)}${it.time ? ' ' + pretty(it.time, true) : ''}`;
-      const tail = [names(it.for || []), it.cost, it.note].filter(Boolean).join(' · ');
-      h += `<div class="pev extra"><span class="ptime">${esc(when)}</span> <span class="ptitle">${esc(it.title)}</span>${tail ? `<span class="pwho">${esc(tail)}</span>` : ''}</div>`;
-    });
-  }
-  return h + '</div>';
+  if (!any) h += '<p class="pempty">Nothing scheduled this month.</p>';
+  return h + '</div></div>';
 }
 
 function ideaCard(it, passed) {
