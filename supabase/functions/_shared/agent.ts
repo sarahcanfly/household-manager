@@ -467,7 +467,13 @@ export class Agent {
     const messages: { role: string; content: unknown }[] = cleanHistory(history, msg);
     try {
       for (let step = 0; step < MAX_STEPS; step++) {
-        const r = await this.d.claude({ system: this.system(w), tools: TOOLS, messages, max_tokens: 2048 });
+        // The tool list is the same on every step. Caching it means later steps in one
+        // Ask pay the cache-read price for that prefix. 4096 leaves room for the model's
+        // own thinking plus the tool call; the cap is not a target.
+        const r = await this.d.claude({
+          system: this.system(w), tools: TOOLS, messages, max_tokens: 4096,
+          cache_control: { type: 'ephemeral' },
+        });
         messages.push({ role: 'assistant', content: r.content });
         if (r.stop_reason === 'max_tokens') {
           // Cut off mid-answer: any half-written tool calls are not run.
