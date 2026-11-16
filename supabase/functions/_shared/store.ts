@@ -10,6 +10,14 @@ import type { Reminder } from './holidays.ts';
 
 export type Feed = SyncFeedConfig;
 export interface DocSource { id: string; name: string; type?: 'doc' | 'pdf'; hint?: string }
+/** Last read of one shared document. A plain string is a legacy successful hash. */
+export interface DocRead {
+  hash: string;
+  ok: boolean;
+  fails: number;
+  retry_at?: string;
+  reader: number;
+}
 export interface SmsRecipient { name: string; number: string; carrier?: string }   // carrier only matters without Twilio
 export interface Settings {
   timezone: string;
@@ -25,8 +33,8 @@ export interface Settings {
   push: { weekly: boolean; reminders: boolean; digest: boolean };
   feeds: Feed[];
   docs: DocSource[];
-  /** Fingerprint of each shared document the last time Claude read it (document id -> hash), so unchanged documents are skipped. */
-  doc_hashes?: Record<string, string>;
+  /** Last read of each shared document (id -> hash or DocRead), so an unchanged document is not sent to Claude again. */
+  doc_hashes?: Record<string, string | DocRead>;
   ics_rules: FeedRules;
   max_recurrence_weeks: number;
 }

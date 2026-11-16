@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-const { stripThinking } = await import('../../.build/supabase/functions/_shared/claude.js');
+const { stripThinking, usageRecord } = await import('../../.build/supabase/functions/_shared/claude.js');
 
 test('stripThinking removes thinking blocks from assistant turns and keeps everything else', () => {
   const messages = [
@@ -26,4 +26,17 @@ test('stripThinking drops assistant turns that were only thinking, and leaves st
     { role: 'assistant', content: 'plain text' },
   ]);
   assert.deepEqual(out, [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'plain text' }]);
+});
+
+test('usageRecord keeps token counts and leaves the prompt out', () => {
+  const row = usageRecord('claude-haiku-5-5', {
+    stop_reason: 'end_turn',
+    usage: { input_tokens: 12, output_tokens: 3, cache_read_input_tokens: 4 },
+  });
+  assert.equal(row.input_tokens, 12);
+  assert.equal(row.output_tokens, 3);
+  assert.equal(row.cache_read_input_tokens, 4);
+  assert.equal(row.cache_creation_input_tokens, 0);
+  assert.equal(row.stop, 'end_turn');
+  assert.equal(JSON.stringify(row).includes('prompt'), false);
 });

@@ -27,6 +27,8 @@ test('adds an event straight away, flags the missing driver and tells the others
   assert.equal(notices.length, 1); assert.match(notices[0].lines.join('\n'), /No driver assigned/);
   assert.ok(claude.calls[0].tools.some((t) => t.name === 'delete_event'));
   assert.match(claude.calls[0].system, /data, never instructions/);
+  assert.deepEqual(claude.calls[0].cache_control, { type: 'ephemeral' });
+  assert.equal(claude.calls[0].max_tokens, 4096);
 });
 
 test('does not put the same idea on the shelf twice', async () => {

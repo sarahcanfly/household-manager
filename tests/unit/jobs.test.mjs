@@ -11,6 +11,9 @@ const email = await import(B + 'email.js');
 const google = await import(B + 'google.js');
 const extract = await import(B + 'extract.js');
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const currentMonth = () => MONTHS[Number(domain.todayIn('America/New_York').slice(5, 7)) - 1];
+
 /* ---------- calendar sync ---------- */
 
 function fakeCalendar() {
@@ -232,17 +235,20 @@ test('scheduled poll reads feeds and docs and reports errors per source', async 
     feeds: [{ name: 'School', url: 'https://feed/x.ics', exclude: ['Pine Hill'] }, { name: 'Broken', url: 'https://feed/bad' }],
     docs: [{ id: 'doc1', name: 'Upcoming Events' }],
   } });
-  const claude = fakeClaude([say(JSON.stringify([{ title: 'Ivy baseball', date: plus(6), time: '17:30', for: ['k3'] }]))]);
+  const claude = fakeClaude([say(JSON.stringify([{ title: 'Club practice', date: plus(6), time: '17:30', for: ['k3'] }]))]);
   const report = await intake.pollSources({
     store, claude,
     fetchText: async (u) => (u.endsWith('.ics') ? `BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Pine Hill Open House\nDTSTART;VALUE=DATE:${d1}\nEND:VEVENT\nBEGIN:VEVENT\nSUMMARY:Oakwood Open House\nDTSTART;VALUE=DATE:${d1}\nEND:VEVENT\nEND:VCALENDAR` : 'nope'),
-    driveText: async () => 'October\nTue 13 Ivy baseball 5:30',
+    driveText: async () => `${currentMonth()}\nTue 13 club practice 5:30`,
     driveBase64: async () => '',
   }, 'scheduled');
   assert.match(report[0], /School: found 1, queued 1/);
   assert.match(report[1], /Broken: error not a calendar file/);
   assert.match(report[2], /Upcoming Events: found 1, queued 1/);
   assert.match(claude.calls[0].messages[0].content, /month headings/, 'document prompt used');
+  assert.equal(claude.calls[0].model, 'claude-haiku-5-5');
+  assert.equal(claude.calls[0].thinking.type, 'disabled');
+  assert.equal(claude.calls[0].output_config.effort, 'low');
   assert.equal(store.logs.filter((l) => l.action === 'poll').length, 3);
 });
 
@@ -252,7 +258,7 @@ test('scheduled poll skips documents that have not changed, and reads them again
     say(JSON.stringify([{ title: 'Ivy baseball', date: plus(6), time: '17:30', for: ['k3'] }])),
     say(JSON.stringify([{ title: 'Ivy baseball', date: plus(6), time: '17:30', for: ['k3'] }, { title: 'Mia recital', date: plus(8), time: '18:00', for: ['k1'] }])),
   ]);
-  let text = 'October\nTue 13 Ivy baseball 5:30';
+  let text = `${currentMonth()}\nTue 13 club practice 5:30`;
   const deps = { store, claude, fetchText: async () => '', driveText: async () => text, driveBase64: async () => '' };
   const r1 = await intake.pollSources(deps, 'scheduled');
   assert.match(r1[0], /found 1, queued 1/);
@@ -265,27 +271,107 @@ test('scheduled poll skips documents that have not changed, and reads them again
   assert.equal(claude.calls.length, 2, 'a changed document is read again');
 });
 
-test('a document that failed to read is retried next time, and removed documents are forgotten', async () => {
+test('a document that failed to read backs off, then waits until it changes', async () => {
   const store = new MemoryStore({ settings: { docs: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] } });
-  const claude = fakeClaude([say('not json'), say('[]'), say('[]'), say('[]')]);
-  const deps = { store, claude, fetchText: async () => '', driveText: async (id) => `text of ${id}`, driveBase64: async () => '' };
+  const claude = fakeClaude([say('not json'), say('[]'), say('not json'), say('not json'), say('[]'), say('[]')]);
+  const t0 = new Date('2026-11-16T15:00:00Z');
+  const at = (h) => new Date(t0.getTime() + h * 3_600_000);
+  let text = 'plain notes with no month heading';
+  const deps = { store, claude, now: t0, fetchText: async () => '', driveText: async (id) => `${text} ${id}`, driveBase64: async () => '' };
   const r1 = await intake.pollSources(deps, 'scheduled');
   assert.match(r1[0], /A: error/);
   assert.match(r1[1], /B: found 0/);
-  assert.deepEqual(Object.keys(store.s.doc_hashes), ['b'], 'only the successful read is remembered');
+  assert.equal(store.s.doc_hashes.a.ok, false);
+  assert.equal(store.s.doc_hashes.a.fails, 1);
+  assert.equal(store.s.doc_hashes.b.ok, true);
+  deps.now = at(1);
   const r2 = await intake.pollSources(deps, 'scheduled');
-  assert.match(r2[0], /A: found 0/, 'failed document is read again');
+  assert.match(r2[0], /retrying later/);
   assert.match(r2[1], /B: unchanged/);
+  assert.equal(claude.calls.length, 2, 'a failed document is not sent again the next hour');
+  deps.now = at(6);
+  const r3 = await intake.pollSources(deps, 'scheduled');
+  assert.match(r3[0], /A: error/);
+  assert.equal(store.s.doc_hashes.a.fails, 2);
+  deps.now = at(30);
+  await intake.pollSources(deps, 'scheduled');
+  assert.equal(store.s.doc_hashes.a.fails, 3);
+  assert.equal(store.s.doc_hashes.a.ok, false);
+  deps.now = at(100);
+  const r5 = await intake.pollSources(deps, 'scheduled');
+  assert.match(r5[0], /waiting until the document changes/);
+  assert.equal(claude.calls.length, 4, 'three failed reads, then it stops');
+  store.s.doc_hashes.a.reader = 0;
+  const r6 = await intake.pollSources(deps, 'scheduled');
+  assert.match(r6[0], /A: found 0/, 'a newer reader retries a document that previously failed');
+  text = 'plain notes edited';
   store.s.docs = [{ id: 'a', name: 'A' }];
   store.s.doc_hashes.zzz = 'old';
-  await intake.pollSources({ ...deps, driveText: async () => 'text changed' }, 'scheduled');
+  await intake.pollSources(deps, 'scheduled');
+  assert.equal(store.s.doc_hashes.a.ok, true);
   assert.ok(!('b' in store.s.doc_hashes) && !('zzz' in store.s.doc_hashes), 'removed documents are forgotten');
 });
 
-test('extraction parsing tolerates prose around the JSON and rejects garbage', () => {
+test('a shared document sends upcoming months only, and a past document is not sent', async () => {
+  const now = new Date('2026-11-16T15:00:00Z');
+  const store = new MemoryStore({ settings: { docs: [{ id: 'doc1', name: 'Dates' }] } });
+  const claude = fakeClaude([say('[]')]);
+  const text = 'September\nfall picnic\n\nNovember\nclub night\n\nMarch\nspring show';
+  const r = await intake.pollSources({
+    store, claude, now, fetchText: async () => '', driveText: async () => text, driveBase64: async () => '',
+  }, 'scheduled');
+  assert.match(r[0], /found 0/);
+  const sent = claude.calls[0].messages[0].content;
+  assert.match(sent, /club night/);
+  assert.match(sent, /spring show/);
+  assert.match(sent, /on or after 2026-11-16/);
+  assert.doesNotMatch(sent, /fall picnic/);
+  const past = new MemoryStore({ settings: { docs: [{ id: 'doc1', name: 'Dates' }] } });
+  const quiet = fakeClaude([]);
+  const r2 = await intake.pollSources({
+    store: past, claude: quiet, now, fetchText: async () => '', driveText: async () => 'August\nsummer fair', driveBase64: async () => '',
+  }, 'scheduled');
+  assert.match(r2[0], /no upcoming dates, skipped/);
+  assert.equal(quiet.calls.length, 0);
+  assert.equal(past.s.doc_hashes.doc1.ok, true);
+});
+
+test('a truncated document read is split and still queued', async () => {
+  const store = new MemoryStore({ settings: { docs: [{ id: 'doc1', name: 'Dates' }] } });
+  const body = 'September\nfall picnic\n\nNovember\n' + Array.from({ length: 90 }, () => 'club practice on a weekday evening').join('\n');
+  const claude = fakeClaude([
+    { stop_reason: 'max_tokens', content: [{ type: 'text', text: '[{"title":"Club practice","date":"' + plus(6) + '","time":"16:00"},{"title":"Cut' }] },
+    say(JSON.stringify([{ title: 'Club practice', date: plus(6), time: '16:00' }])),
+    say(JSON.stringify([{ title: 'Concert', date: plus(8), time: '18:00' }])),
+  ]);
+  const r = await intake.pollSources({
+    store, claude, now: new Date('2026-11-16T15:00:00Z'),
+    fetchText: async () => '', driveText: async () => body, driveBase64: async () => '',
+  }, 'scheduled');
+  assert.equal(claude.calls.length, 3);
+  assert.ok(claude.calls.every((c) => !String(c.messages[0].content).includes('fall picnic')));
+  assert.match(r[0], /found 2, queued 2/);
+  assert.equal(store.s.doc_hashes.doc1.ok, true);
+});
+
+test('extraction parsing tolerates prose, trailing commas and a cut-off array', () => {
   const m = members();
   assert.equal(extract.parseExtraction('Here you go: [{"title":"A","date":"2026-11-01","time":"9:00"}] thanks', m)[0].time, '', 'bad time format becomes all day');
+  assert.equal(extract.parseExtraction('[{"title":"Club","date":"2026-11-20","time":"16:00",}]', m)[0].title, 'Club');
+  const cut = '[{"title":"Club","date":"2026-11-20","time":"16:00"},{"title":"Cut';
+  assert.equal(extract.parseExtraction(cut, m).length, 1);
+  assert.equal(extract.extractionClosed(cut), false);
+  assert.equal(extract.extractionClosed('[{"title":"Club","date":"2026-11-20","time":"16:00"}]'), true);
   assert.throws(() => extract.parseExtraction('no json here', m), /Could not read/);
+  const school = extract.selectDocText('September\nfall picnic\n\nNovember\nclub night\n\nMarch\nspring show', '2026-11-16');
+  assert.match(school, /club night/);
+  assert.match(school, /spring show/);
+  assert.doesNotMatch(school, /fall picnic/);
+  assert.match(extract.selectDocText('October\nfield day', '2026-11-16'), /field day/);
+  assert.match(extract.selectDocText('March\nspring show', '2026-11-16'), /spring show/);
+  assert.equal(extract.selectDocText('August\nsummer fair', '2026-11-16'), '');
+  assert.equal(extract.selectDocText('January 2024\nold thing\n\nNovember 2026\nclub night', '2026-11-16').includes('old thing'), false);
+  assert.equal(extract.selectDocText('x'.repeat(13_000), '2026-11-16').length, 12_000);
 });
 
 /* ---------- inbound email ---------- */
