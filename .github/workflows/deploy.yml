@@ -41,7 +41,9 @@ jobs:
       - uses: supabase/setup-cli@v1
         if: steps.check.outputs.ready == 'true'
         with:
-          version: latest
+          # "latest" asks GitHub which release that is, and that lookup is rate limited.
+          # A pinned version downloads the binary directly. This is the release that deployed on Nov 12.
+          version: 3.1.0
       - name: Link project
         if: steps.check.outputs.ready == 'true'
         shell: bash
@@ -88,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 3.1.0
       - name: Link ${{ matrix.family }}
         shell: bash
         run: |
